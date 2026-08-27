@@ -1,0 +1,6 @@
+{
+  "name": "Carpintería Taller",
+  "description": "Aplicación web PWA para maestros carpinteros: Módulo 1 Despiece y cálculo de muebles, Módulo 2 Optimizador y guía de corte 2D con detección de retazos, Módulo 3 Proceso de Armado en Taller (paso a paso, herrajes, checklist y modo cubrecanto), Módulo 4 Cotización y Catálogo de Precios con PDF.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

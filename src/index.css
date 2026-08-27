@@ -1,0 +1,73 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Lexend', system-ui, -apple-system, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* Custom Accessibility & Workshop Button Utilities */
+.btn-giant {
+  min-height: 4.25rem;
+  font-size: 1.35rem;
+  font-weight: 800;
+  padding-left: 1.75rem;
+  padding-right: 1.75rem;
+  border-radius: 1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+  transition: all 0.15s ease-in-out;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+}
+
+.btn-giant:active {
+  transform: scale(0.98);
+}
+
+/* Print optimizations for cut lists & workshop sheets */
+@media print {
+  @page {
+    size: letter portrait;
+    margin: 12mm 10mm 12mm 10mm;
+  }
+
+  body {
+    background: white !important;
+    color: #0f172a !important;
+    font-size: 11pt !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  .print-avoid-break {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .print-page-break {
+    page-break-before: always !important;
+    break-before: page !important;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  /* Ensure SVGs and diagrams print with crisp borders and full width */
+  svg {
+    max-width: 100% !important;
+    height: auto !important;
+  }
+}
