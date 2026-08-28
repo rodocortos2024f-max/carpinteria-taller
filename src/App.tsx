@@ -428,7 +428,6 @@ export default function App() {
         {!currentUser || currentView === 'login' ? (
           <LoginView
             onLogin={handleLogin}
-            onOpenFirebaseModal={() => setIsFirebaseModalOpen(true)}
           />
         ) : currentView === 'superadmin' ? (
           <SuperAdminPanel

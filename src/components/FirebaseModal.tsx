@@ -1,10 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Flame, ShieldCheck, Database, Key, CheckCircle, Clock, Wifi, WifiOff, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Flame, ShieldCheck, Database, Key, Clock, Wifi, WifiOff, RefreshCw } from 'lucide-react';
 import {
   checkOfflineLicenseStatus,
-  getLastFirebaseValidation,
-  revalidateLicenseWithFirebase,
-  recordSuccessfulFirebaseValidation
+  revalidateLicenseWithFirebase
 } from '../utils/licenseSecurity';
 
 interface FirebaseModalProps {
@@ -40,32 +38,6 @@ export const FirebaseModal: React.FC<FirebaseModalProps> = ({
     setOfflineStatus(checkOfflineLicenseStatus());
   };
 
-  const handleSimulate24HoursOffline = () => {
-    // Simula que la última validación ocurrió hace 25 horas
-    const pastTimestamp = Date.now() - (25 * 60 * 60 * 1000);
-    const record = {
-      timestamp: pastTimestamp,
-      formattedDate: new Date(pastTimestamp).toLocaleString('es-ES', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      }),
-      source: 'test_simulation_25h'
-    };
-    localStorage.setItem('carpinteria_last_firebase_validation_v1', JSON.stringify(record));
-    window.dispatchEvent(new CustomEvent('carpinteria_firebase_validation_updated', { detail: record }));
-    setOfflineStatus(checkOfflineLicenseStatus());
-    setStatusMessage('Simulación activada: Se fijó la última validación con Firebase hace 25 horas (>24h). El sistema exigirá conexión.');
-  };
-
-  const handleResetValidationNow = () => {
-    recordSuccessfulFirebaseValidation('manual_reset');
-    setOfflineStatus(checkOfflineLicenseStatus());
-    setStatusMessage('Validación restablecida con fecha y hora actual. Tienes 24 horas continuas de gracia offline.');
-  };
-
   return (
     <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-3xl max-w-2xl w-full border-4 border-amber-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -75,8 +47,8 @@ export const FirebaseModal: React.FC<FirebaseModalProps> = ({
           <div className="flex items-center gap-3">
             <Flame className="w-8 h-8 text-amber-400 animate-pulse" />
             <div>
-              <h3 className="text-2xl font-black">FIREBASE & SEGURIDAD OFFLINE</h3>
-              <p className="text-xs text-amber-200 font-semibold">Validación y Regla de 24 Horas de Licencia</p>
+              <h3 className="text-2xl font-black">FIREBASE & SEGURIDAD DE LICENCIA</h3>
+              <p className="text-xs text-amber-200 font-semibold">Validación y Estado de Operación del Taller</p>
             </div>
           </div>
           <button
@@ -101,41 +73,41 @@ export const FirebaseModal: React.FC<FirebaseModalProps> = ({
               <div className="space-y-2 flex-1">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h4 className="text-lg sm:text-xl font-black">
-                    Regla de Seguridad de Licencias Offline (24h)
+                    Seguridad de Licencias del Taller
                   </h4>
                   <span className={`text-xs font-black px-3 py-1 rounded-full uppercase border ${
                     offlineStatus.isExpired
                       ? 'bg-rose-200 text-rose-900 border-rose-400'
                       : 'bg-emerald-100 text-emerald-900 border-emerald-300'
                   }`}>
-                    {offlineStatus.isExpired ? '⚠️ Licencia Offline Caducada (>24h)' : '✓ Licencia Offline Válida'}
+                    {offlineStatus.isExpired ? '⚠️ Requiere Validación Online' : '✓ Licencia Activa'}
                   </span>
                 </div>
 
-                <p className="text-sm font-medium leading-relaxed">
-                  Para proteger las licencias del taller y permitir trabajo continuo en zonas sin señal, la aplicación almacena localmente la fecha y hora de la última validación con Firebase.
+                <p className="text-sm font-medium leading-relaxed text-slate-700">
+                  La aplicación verifica periódicamente la licencia del taller con Firebase y permite trabajar sin conexión a internet en el taller.
                 </p>
 
                 <div className="bg-white/80 rounded-xl p-3.5 border border-amber-200/80 space-y-1.5 text-sm">
                   <div className="flex items-center justify-between text-slate-700 font-bold">
                     <span className="flex items-center gap-1.5">
                       <Clock className="w-4 h-4 text-amber-700" />
-                      Última Validación con Firebase:
+                      Última Validación con Servidor:
                     </span>
                     <span className="font-extrabold text-slate-950">{offlineStatus.lastValidationFormatted}</span>
                   </div>
                   <div className="flex items-center justify-between text-slate-700 font-bold">
                     <span className="flex items-center gap-1.5">
                       {offlineStatus.isOnline ? <Wifi className="w-4 h-4 text-emerald-600" /> : <WifiOff className="w-4 h-4 text-rose-600" />}
-                      Tiempo Transcurrido sin Conexión:
+                      Estado de Conexión:
                     </span>
-                    <span className={`font-extrabold ${offlineStatus.isExpired ? 'text-rose-600' : 'text-emerald-700'}`}>
-                      {offlineStatus.hoursOffline} horas {offlineStatus.isExpired ? '(Límite Excedido)' : `(${offlineStatus.hoursRemaining}h restantes)`}
+                    <span className={`font-extrabold ${offlineStatus.isOnline ? 'text-emerald-700' : 'text-amber-700'}`}>
+                      {offlineStatus.isOnline ? 'En línea (Online)' : 'Sin conexión (Modo Taller Offline)'}
                     </span>
                   </div>
                 </div>
 
-                {/* Status or Action Feedback */}
+                {/* Status Feedback */}
                 {statusMessage && (
                   <div className="p-3 bg-amber-100/90 rounded-xl border border-amber-300 text-xs font-bold text-amber-900">
                     {statusMessage}
@@ -143,12 +115,12 @@ export const FirebaseModal: React.FC<FirebaseModalProps> = ({
                 )}
 
                 {/* Revalidate Button */}
-                <div className="pt-2 flex flex-col sm:flex-row gap-2">
+                <div className="pt-2">
                   <button
                     type="button"
                     onClick={handleManualRevalidate}
                     disabled={isRevalidating}
-                    className="flex-1 bg-amber-700 hover:bg-amber-800 text-white font-black text-sm py-3 px-4 rounded-xl border-2 border-amber-900 shadow flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                    className="w-full bg-amber-700 hover:bg-amber-800 text-white font-black text-sm py-3 px-4 rounded-xl border-2 border-amber-900 shadow flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                   >
                     <RefreshCw className={`w-4 h-4 ${isRevalidating ? 'animate-spin' : ''}`} />
                     {isRevalidating ? 'Revalidando con Firebase...' : 'Revalidar Licencia Ahora (Online)'}
@@ -159,30 +131,6 @@ export const FirebaseModal: React.FC<FirebaseModalProps> = ({
             </div>
           </div>
 
-          {/* Test & Simulation Controls */}
-          <div className="bg-slate-50 p-4 rounded-2xl border-2 border-slate-200 space-y-3">
-            <h5 className="text-xs font-black text-slate-600 uppercase tracking-wider flex items-center gap-1.5">
-              <AlertTriangle className="w-4 h-4 text-amber-600" />
-              Herramientas de Verificación de Caducidad Offline (Desarrollo / Pruebas)
-            </h5>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={handleSimulate24HoursOffline}
-                className="bg-rose-100 hover:bg-rose-200 text-rose-900 text-xs font-bold px-3 py-2 rounded-xl border border-rose-300 transition cursor-pointer"
-              >
-                Simular &gt;24h Offline (Forzar Caducidad)
-              </button>
-              <button
-                type="button"
-                onClick={handleResetValidationNow}
-                className="bg-emerald-100 hover:bg-emerald-200 text-emerald-900 text-xs font-bold px-3 py-2 rounded-xl border border-emerald-300 transition cursor-pointer"
-              >
-                Restablecer Validación a Ahora (0h Offline)
-              </button>
-            </div>
-          </div>
-
           {/* Service status info */}
           <div className="space-y-3">
             <h5 className="text-base font-black text-slate-900">Servicios Firebase Integrados:</h5>
@@ -190,7 +138,7 @@ export const FirebaseModal: React.FC<FirebaseModalProps> = ({
             <div className="p-3.5 bg-slate-50 rounded-2xl border-2 border-slate-200 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <Key className="w-5 h-5 text-amber-700" />
-                <span className="text-sm font-extrabold text-slate-900">Firebase Authentication & Verificación de Licencias</span>
+                <span className="text-sm font-extrabold text-slate-900">Firebase Authentication & Licenciamiento</span>
               </div>
               <span className="bg-emerald-100 text-emerald-900 text-xs font-black px-3 py-1 rounded-full uppercase border border-emerald-300">
                 ✓ Activo

@@ -25,10 +25,9 @@ import {
 
 interface LoginViewProps {
   onLogin: (user: User) => void;
-  onOpenFirebaseModal?: () => void;
 }
 
-export const LoginView: React.FC<LoginViewProps> = ({ onLogin, onOpenFirebaseModal }) => {
+export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -117,23 +116,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin, onOpenFirebaseMod
           <p className="text-base sm:text-lg font-bold text-amber-200">
             Ingreso y Aislamiento Seguro de Datos por Taller
           </p>
-
-          {/* Connection & 24h Offline Status Badge */}
-          <div className="mt-4 inline-flex items-center gap-2 bg-black/40 px-3.5 py-1.5 rounded-full border border-amber-500/40 text-xs font-bold">
-            {offlineStatus.isOnline ? (
-              <>
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span className="text-emerald-300">Dispositivo Online</span>
-              </>
-            ) : (
-              <>
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
-                <span className="text-amber-300">Modo Offline (Taller)</span>
-              </>
-            )}
-            <span className="text-amber-400/60">•</span>
-            <span className="text-slate-300">Última validación: {offlineStatus.lastValidationFormatted}</span>
-          </div>
         </div>
 
         {/* Login Form */}
@@ -149,7 +131,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin, onOpenFirebaseMod
                     CADUCIDAD DE LICENCIA OFFLINE (LÍMITE 24 HORAS)
                   </h4>
                   <p className="text-sm font-bold text-rose-800 mt-1 leading-relaxed">
-                    {lockoutMsg || `Han transcurrido más de 24 horas continuas sin conexión a internet desde la última validación exitosa con Firebase (${offlineStatus.lastValidationFormatted}). Para reanudar el trabajo en el taller, conecte el dispositivo a internet para revalidar la licencia del taller.`}
+                    {lockoutMsg || `Han transcurrido más de 24 horas continuas sin conexión a internet desde la última validación exitosa con Firebase. Para reanudar el trabajo en el taller, conecte el dispositivo a internet para revalidar la licencia del taller.`}
                   </p>
                 </div>
               </div>
@@ -163,7 +145,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin, onOpenFirebaseMod
                   className="w-full bg-rose-700 hover:bg-rose-800 text-white font-black py-3 px-4 rounded-xl border-2 border-rose-950 shadow flex items-center justify-center gap-2 text-base cursor-pointer disabled:opacity-50 transition"
                 >
                   <RefreshCw className={`w-5 h-5 ${isRevalidating ? 'animate-spin' : ''}`} />
-                  {isRevalidating ? 'REVALIDANDO CONEXIÓN Y LICENCIA...' : 'REVALIDAR LICENCIA CON INTERNET'}
+                  {isRevalidating ? 'REVALIDANDO CONEXIÓN...' : 'REVALIDAR LICENCIA CON INTERNET'}
                 </button>
               </div>
             </div>
@@ -248,21 +230,10 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin, onOpenFirebaseMod
             </button>
           </form>
 
-          {/* Offline Grace Info */}
-          <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs font-bold text-slate-500 border-t border-slate-200">
-            <div className="flex items-center gap-2">
-              <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span>Modo Offline PWA (24h de Gracia)</span>
-            </div>
-            {onOpenFirebaseModal && (
-              <button
-                type="button"
-                onClick={onOpenFirebaseModal}
-                className="text-amber-800 hover:text-amber-950 underline font-black cursor-pointer"
-              >
-                Ver Estado de Validación Firebase
-              </button>
-            )}
+          {/* Discreet PWA Indicator */}
+          <div className="pt-2 flex items-center justify-center gap-2 text-xs font-semibold text-slate-400 select-none">
+            <span className={`inline-block w-2 h-2 rounded-full ${offlineStatus.isOnline ? 'bg-emerald-500' : 'bg-slate-400'}`}></span>
+            <span>Modo PWA 24</span>
           </div>
 
         </div>
