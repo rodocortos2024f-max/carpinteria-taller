@@ -309,8 +309,9 @@ export function createNewTenant(data: {
   masterName: string;
   masterEmail: string;
   masterPassword?: string;
-  operatorName: string;
-  operatorEmail: string;
+  includeOperator?: boolean;
+  operatorName?: string;
+  operatorEmail?: string;
   operatorPassword?: string;
   customNotes?: string;
 }): WorkshopTenant {
@@ -328,6 +329,16 @@ export function createNewTenant(data: {
   const formattedTime = now.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' }) + ' ' + now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
 
   const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+  const hasOperator = data.includeOperator !== false && Boolean(data.operatorEmail && data.operatorEmail.trim());
+
+  const operatorAccount = hasOperator ? {
+    id: `usr_${tenantId}_op`,
+    name: data.operatorName?.trim() || 'Operario de Taller',
+    email: data.operatorEmail!.trim().toLowerCase(),
+    password: data.operatorPassword || 'chalan2026',
+    role: 'operario' as const
+  } : undefined;
 
   const newTenant: WorkshopTenant = {
     id: tenantId,
@@ -355,13 +366,7 @@ export function createNewTenant(data: {
       password: data.masterPassword || 'taller2026',
       role: 'maestro'
     },
-    operatorAccount: {
-      id: `usr_${tenantId}_op`,
-      name: data.operatorName.trim() || 'Operario de Taller',
-      email: data.operatorEmail.trim().toLowerCase(),
-      password: data.operatorPassword || 'chalan2026',
-      role: 'operario'
-    },
+    operatorAccount,
     customNotes: data.customNotes || ''
   };
 
@@ -371,17 +376,86 @@ export function createNewTenant(data: {
   // Initialize empty project & offcut storage for this new tenant
   saveTenantProjects(tenantId, []);
   saveTenantOffcuts(tenantId, []);
+  const opLogText = operatorAccount
+    ? ` y cuenta para ${operatorAccount.email} (Operario)`
+    : ' (Operación exclusiva con cuenta de Maestro)';
   saveTenantLogs(tenantId, [
     {
       id: 'log_init_' + tenantId,
       timestamp: formattedTime,
       user: 'Super Admin',
       action: 'Creación de Taller',
-      details: `Se activó la licencia de "${newTenant.name}" con cuentas para ${newTenant.masterAccount.email} (Maestro) y ${newTenant.operatorAccount.email} (Operario).`
+      details: `Se activó la licencia de "${newTenant.name}" con cuenta para ${newTenant.masterAccount.email} (Maestro)${opLogText}.`
     }
   ]);
 
   return newTenant;
+}
+
+/**
+ * Remove operator account from a tenant
+ */
+export function removeTenantOperatorAccount(tenantId: string): WorkshopTenant | null {
+  const tenants = getAllTenants();
+  const index = tenants.findIndex(t => t.id === tenantId);
+  if (index === -1) return null;
+
+  delete tenants[index].operatorAccount;
+  saveAllTenants(tenants);
+
+  recordTenantActivity(
+    tenantId,
+    'Super Admin',
+    'Cuenta Operario Eliminada',
+    `Se deshabilitó y eliminó la cuenta de operario para el taller "${tenants[index].name}".`
+  );
+
+  return tenants[index];
+}
+
+/**
+ * Create or activate operator account for a tenant (1-click or customized)
+ */
+export function createOrActivateTenantOperator(
+  tenantId: string,
+  opDetails?: { name?: string; email?: string; password?: string }
+): WorkshopTenant | null {
+  const tenants = getAllTenants();
+  const index = tenants.findIndex(t => t.id === tenantId);
+  if (index === -1) return null;
+
+  const t = tenants[index];
+  const cleanSlug = t.name
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '')
+    .slice(0, 10);
+
+  const defaultEmail = `operario@${cleanSlug || 'taller'}.com`;
+  const defaultName = `Operario de ${t.name.split(' ')[0] || 'Taller'}`;
+  const defaultPass = 'chalan2026';
+
+  const newOp = {
+    id: `usr_${tenantId}_op_${Math.random().toString(36).substring(2, 6)}`,
+    name: opDetails?.name?.trim() || defaultName,
+    email: opDetails?.email?.trim().toLowerCase() || defaultEmail,
+    password: opDetails?.password?.trim() || defaultPass,
+    role: 'operario' as const
+  };
+
+  t.operatorAccount = newOp;
+  tenants[index] = t;
+  saveAllTenants(tenants);
+
+  recordTenantActivity(
+    tenantId,
+    'Super Admin',
+    'Cuenta Operario Activada',
+    `Se activó la cuenta de operario (${newOp.email}) para el taller "${t.name}".`
+  );
+
+  return t;
 }
 
 /**
@@ -454,7 +528,7 @@ export function updateTenantAccessTime(tenantId: string, userEmail?: string): vo
   if (userEmail) {
     if (tenants[index].masterAccount.email.toLowerCase() === userEmail.toLowerCase()) {
       tenants[index].masterAccount.lastLogin = formattedTime;
-    } else if (tenants[index].operatorAccount.email.toLowerCase() === userEmail.toLowerCase()) {
+    } else if (tenants[index].operatorAccount && tenants[index].operatorAccount.email.toLowerCase() === userEmail.toLowerCase()) {
       tenants[index].operatorAccount.lastLogin = formattedTime;
     }
   }
@@ -726,8 +800,8 @@ export function authenticateUserCredentials(emailInput: string, passwordInput: s
       }
     }
 
-    // Check Operator Account
-    if (tenant.operatorAccount.email.toLowerCase() === cleanEmail) {
+    // Check Operator Account (if assigned)
+    if (tenant.operatorAccount && tenant.operatorAccount.email.toLowerCase() === cleanEmail) {
       if (tenant.status === 'suspendida') {
         return {
           success: false,

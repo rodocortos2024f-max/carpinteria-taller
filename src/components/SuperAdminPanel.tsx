@@ -8,7 +8,9 @@ import {
   deleteTenant,
   getGlobalPlatformStats,
   saveAllTenants,
-  getTenantProjects
+  getTenantProjects,
+  removeTenantOperatorAccount,
+  createOrActivateTenantOperator
 } from '../utils/tenants';
 import {
   ShieldCheck,
@@ -122,7 +124,8 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
   const [newMasterEmail, setNewMasterEmail] = useState('');
   const [newMasterPassword, setNewMasterPassword] = useState('taller2026');
 
-  // Operario / Chalán Account
+  // Operario / Chalán Account (Opcional)
+  const [includeOperatorAccount, setIncludeOperatorAccount] = useState(false);
   const [newOpName, setNewOpName] = useState('');
   const [newOpEmail, setNewOpEmail] = useState('');
   const [newOpPassword, setNewOpPassword] = useState('chalan2026');
@@ -171,8 +174,13 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
       return;
     }
 
-    if (!newMasterEmail.trim() || !newOpEmail.trim()) {
-      setFormErrorMessage('Debe especificar los correos de la cuenta del Maestro y del Operario/Chalán.');
+    if (!newMasterEmail.trim()) {
+      setFormErrorMessage('Debe especificar el correo de acceso para la cuenta del Maestro.');
+      return;
+    }
+
+    if (includeOperatorAccount && !newOpEmail.trim()) {
+      setFormErrorMessage('Ha marcado la creación de cuenta de Operario; ingrese su correo o desactive la opción.');
       return;
     }
 
@@ -190,9 +198,10 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
         masterName: newMasterName || `Maestro ${newOwnerName.split(' ')[0]}`,
         masterEmail: newMasterEmail,
         masterPassword: newMasterPassword,
-        operatorName: newOpName || 'Operario / Chalán',
-        operatorEmail: newOpEmail,
-        operatorPassword: newOpPassword,
+        includeOperator: includeOperatorAccount,
+        operatorName: includeOperatorAccount ? (newOpName || 'Operario / Chalán') : undefined,
+        operatorEmail: includeOperatorAccount ? newOpEmail : undefined,
+        operatorPassword: includeOperatorAccount ? newOpPassword : undefined,
         customNotes: newNotes
       });
 
@@ -200,7 +209,11 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
       const freshTenants = getAllTenants();
       setTenants(freshTenants);
       setStats(getGlobalPlatformStats());
-      setFormSuccessMessage(`¡Taller "${created.name}" registrado y activado exitosamente con licencia ${created.licensePlan.toUpperCase()}!`);
+      setFormSuccessMessage(
+        `¡Taller "${created.name}" registrado y activado exitosamente con licencia ${created.licensePlan.toUpperCase()}! ${
+          created.operatorAccount ? '(Con cuenta de Maestro y Operario)' : '(Cuenta única de Maestro - Operario desactivado)'
+        }`
+      );
       
       // Clear form and reset expiry to default for current plan
       setNewWorkshopName('');
@@ -211,6 +224,7 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
       setNewAddress('');
       setNewMasterName('');
       setNewMasterEmail('');
+      setIncludeOperatorAccount(false);
       setNewOpName('');
       setNewOpEmail('');
       setNewNotes('');
@@ -239,6 +253,23 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
     }
   };
 
+  // Delete Operator Account
+  const handleDeleteOperatorAccount = (tenant: WorkshopTenant) => {
+    if (window.confirm(`¿Desea eliminar la cuenta de Operario del taller "${tenant.name}"?\n\nEl operario ya no podrá iniciar sesión. Podrá reactivarla o crearla nuevamente en cualquier momento con un solo clic.`)) {
+      removeTenantOperatorAccount(tenant.id);
+      refreshData();
+    }
+  };
+
+  // Quick 1-Click Activate Operator Account
+  const handleQuickActivateOperator = (tenant: WorkshopTenant) => {
+    const updated = createOrActivateTenantOperator(tenant.id);
+    refreshData();
+    if (updated) {
+      setCredentialsModalTenant(updated);
+    }
+  };
+
   // Copy helper
   const handleCopyText = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
@@ -253,7 +284,7 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
       t.ownerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       t.city.toLowerCase().includes(searchTerm.toLowerCase()) ||
       t.masterAccount.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      t.operatorAccount.email.toLowerCase().includes(searchTerm.toLowerCase());
+      (Boolean(t.operatorAccount?.email) && t.operatorAccount!.email.toLowerCase().includes(searchTerm.toLowerCase()));
 
     const matchesStatus = statusFilter === 'all' || t.status === statusFilter;
     return matchesSearch && matchesStatus;
@@ -377,9 +408,11 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
               </span>
               <Users className="w-7 h-7 text-cyan-400" />
             </div>
-            <p className="text-4xl sm:text-5xl font-black text-white">{stats.totalTenants * 2}</p>
+            <p className="text-4xl sm:text-5xl font-black text-white">
+              {tenants.length + tenants.filter(t => Boolean(t.operatorAccount)).length}
+            </p>
             <p className="text-sm font-extrabold text-cyan-400">
-              Cuentas Maestro & Operario Activas
+              {tenants.length} Maestros • {tenants.filter(t => Boolean(t.operatorAccount)).length} Operarios Activos
             </p>
           </div>
 
@@ -505,14 +538,25 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
                         <span>PROBAR COMO MAESTRO</span>
                       </button>
 
-                      <button
-                        onClick={() => onSimulateTenantLogin(t, 'operario')}
-                        className="bg-orange-800 hover:bg-orange-700 text-amber-100 font-black text-sm px-4 py-2.5 rounded-xl border border-orange-600 shadow-md flex items-center gap-2 transition cursor-pointer"
-                        title="Abrir taller como Operario/Chalán (Solo Módulos 2 y 3, sin precios)"
-                      >
-                        <span>🔨</span>
-                        <span>PROBAR COMO OPERARIO</span>
-                      </button>
+                      {t.operatorAccount ? (
+                        <button
+                          onClick={() => onSimulateTenantLogin(t, 'operario')}
+                          className="bg-orange-800 hover:bg-orange-700 text-amber-100 font-black text-sm px-4 py-2.5 rounded-xl border border-orange-600 shadow-md flex items-center gap-2 transition cursor-pointer"
+                          title="Abrir taller como Operario/Chalán (Solo Módulos 2 y 3, sin precios)"
+                        >
+                          <span>🔨</span>
+                          <span>PROBAR COMO OPERARIO</span>
+                        </button>
+                      ) : (
+                        <button
+                          disabled
+                          className="bg-slate-900 text-slate-500 font-bold text-xs px-3.5 py-2.5 rounded-xl border border-slate-800 flex items-center gap-2 cursor-not-allowed opacity-50 select-none"
+                          title="Este taller no tiene cuenta de operario activa"
+                        >
+                          <span className="opacity-40">🔨</span>
+                          <span>PROBAR COMO OPERARIO (DESHABILITADO)</span>
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -590,44 +634,81 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
                       </div>
                     </div>
 
-                    {/* Column 3: Cuenta del Operario / Chalán */}
-                    <div className="bg-slate-900 p-5 rounded-2xl border border-orange-900/40 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <h4 className="text-xs font-black uppercase tracking-wider text-orange-400 flex items-center gap-1.5">
-                          <span>🔨</span>
-                          Cuenta Operario / Chalán
-                        </h4>
-                        <span className="text-[10px] bg-orange-400/20 text-orange-300 px-2 py-0.5 rounded-full font-black">
-                          SOLO CORTE & ARMADO (M2, M3)
-                        </span>
-                      </div>
+                    {/* Column 3: Cuenta del Operario / Chalán (Opcional) */}
+                    {t.operatorAccount ? (
+                      <div className="bg-slate-900 p-5 rounded-2xl border border-orange-900/40 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-xs font-black uppercase tracking-wider text-orange-400 flex items-center gap-1.5">
+                            <span>🔨</span>
+                            Cuenta Operario / Chalán
+                          </h4>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] bg-orange-400/20 text-orange-300 px-2 py-0.5 rounded-full font-black">
+                              SOLO M2 & M3
+                            </span>
+                            <button
+                              onClick={() => handleDeleteOperatorAccount(t)}
+                              className="p-1 text-slate-400 hover:text-rose-400 hover:bg-rose-950/80 rounded-lg transition cursor-pointer"
+                              title="Eliminar cuenta de Operario"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
 
-                      <div className="space-y-1.5 text-sm font-bold">
-                        <p className="text-white">{t.operatorAccount.name}</p>
-                        <div className="flex items-center justify-between bg-slate-950 p-2 rounded-xl border border-slate-800 text-xs">
-                          <span className="text-slate-300 truncate">{t.operatorAccount.email}</span>
-                          <button
-                            onClick={() => handleCopyText(t.operatorAccount.email, `op_email_${t.id}`)}
-                            className="text-orange-400 hover:text-orange-300 p-1 shrink-0"
-                            title="Copiar Correo"
-                          >
-                            {copiedKey === `op_email_${t.id}` ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-                          </button>
-                        </div>
-                        <div className="flex items-center justify-between bg-slate-950 p-2 rounded-xl border border-slate-800 text-xs">
-                          <span className="text-slate-400">Pass:</span>
-                          <span className="text-orange-400 font-mono font-bold">
-                            {showPasswords[`op_${t.id}`] ? t.operatorAccount.password || 'chalan2026' : '••••••••'}
-                          </span>
-                          <button
-                            onClick={() => setShowPasswords(prev => ({ ...prev, [`op_${t.id}`]: !prev[`op_${t.id}`] }))}
-                            className="text-slate-400 hover:text-slate-200 p-1"
-                          >
-                            {showPasswords[`op_${t.id}`] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                          </button>
+                        <div className="space-y-1.5 text-sm font-bold">
+                          <p className="text-white">{t.operatorAccount.name}</p>
+                          <div className="flex items-center justify-between bg-slate-950 p-2 rounded-xl border border-slate-800 text-xs">
+                            <span className="text-slate-300 truncate">{t.operatorAccount.email}</span>
+                            <button
+                              onClick={() => handleCopyText(t.operatorAccount!.email, `op_email_${t.id}`)}
+                              className="text-orange-400 hover:text-orange-300 p-1 shrink-0"
+                              title="Copiar Correo"
+                            >
+                              {copiedKey === `op_email_${t.id}` ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                            </button>
+                          </div>
+                          <div className="flex items-center justify-between bg-slate-950 p-2 rounded-xl border border-slate-800 text-xs">
+                            <span className="text-slate-400">Pass:</span>
+                            <span className="text-orange-400 font-mono font-bold">
+                              {showPasswords[`op_${t.id}`] ? t.operatorAccount.password || 'chalan2026' : '••••••••'}
+                            </span>
+                            <button
+                              onClick={() => setShowPasswords(prev => ({ ...prev, [`op_${t.id}`]: !prev[`op_${t.id}`] }))}
+                              className="text-slate-400 hover:text-slate-200 p-1"
+                            >
+                              {showPasswords[`op_${t.id}`] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    ) : (
+                      <div className="bg-slate-900/40 p-5 rounded-2xl border border-dashed border-slate-800 space-y-3 flex flex-col justify-between">
+                        <div>
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-xs font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                              <span className="opacity-40">🔨</span>
+                              Cuenta Operario / Chalán
+                            </h4>
+                            <span className="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full font-bold">
+                              NO ASIGNADA (OPCIONAL)
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-400 mt-2.5 leading-relaxed font-medium">
+                            Este taller opera únicamente con la cuenta del Maestro. La cuenta de operario no ha sido creada.
+                          </p>
+                        </div>
+
+                        <button
+                          onClick={() => handleQuickActivateOperator(t)}
+                          className="w-full bg-orange-700 hover:bg-orange-600 text-white font-black text-xs px-3.5 py-3 rounded-xl border border-orange-500 shadow-md flex items-center justify-center gap-2 transition cursor-pointer"
+                          title="Crear y activar cuenta de operario para este taller con un solo clic"
+                        >
+                          <Sparkles className="w-4 h-4 text-amber-200" />
+                          <span>ACTIVAR OPERARIO (1 CLIC)</span>
+                        </button>
+                      </div>
+                    )}
 
                   </div>
 
@@ -943,53 +1024,89 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
                 </div>
               </div>
 
-              {/* Sección 3: Cuenta Secundaria del Operario / Chalán (Restringido a Módulos 2 y 3) */}
-              <div className="bg-slate-900 p-6 rounded-2xl border-2 border-orange-500/40 space-y-4">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-base font-black text-orange-300 uppercase tracking-wider flex items-center gap-2">
-                    <span>🔨</span>
-                    3. Cuenta Secundaria del Operario / Chalán
-                  </h4>
-                  <span className="text-xs font-black bg-orange-500 text-white px-2.5 py-1 rounded-full">
-                    Sin Precios ni Costos • Solo M2 y M3
-                  </span>
+              {/* Sección 3: Cuenta Secundaria del Operario / Chalán (Opcional) */}
+              <div className={`p-6 rounded-2xl border-2 transition-all space-y-4 ${
+                includeOperatorAccount ? 'bg-slate-900 border-orange-500/50' : 'bg-slate-900/50 border-slate-800'
+              }`}>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      id="toggleOperatorCreation"
+                      checked={includeOperatorAccount}
+                      onChange={(e) => setIncludeOperatorAccount(e.target.checked)}
+                      className="w-5 h-5 accent-orange-500 rounded cursor-pointer"
+                    />
+                    <label htmlFor="toggleOperatorCreation" className="cursor-pointer">
+                      <h4 className="text-base font-black text-orange-300 uppercase tracking-wider flex items-center gap-2">
+                        <span>🔨</span>
+                        3. Cuenta de Operario / Chalán (Opcional)
+                      </h4>
+                      <p className="text-xs text-slate-400 font-medium">
+                        {includeOperatorAccount
+                          ? 'Acceso restringido a Sierra (M2) y Armado (M3) sin precios ni cotizaciones'
+                          : 'Desactivada: el taller operará solo con cuenta de Maestro (se puede activar después)'}
+                      </p>
+                    </label>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setIncludeOperatorAccount(prev => !prev)}
+                    className={`text-xs font-black px-3.5 py-1.5 rounded-full border transition cursor-pointer ${
+                      includeOperatorAccount
+                        ? 'bg-orange-500 text-slate-950 border-orange-300 shadow'
+                        : 'bg-slate-800 text-slate-400 border-slate-700'
+                    }`}
+                  >
+                    {includeOperatorAccount ? '✓ CUENTA ACTIVADA' : '+ NO CREAR CUENTA OPERARIO'}
+                  </button>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">Nombre del Operario</label>
-                    <input
-                      type="text"
-                      value={newOpName}
-                      onChange={(e) => setNewOpName(e.target.value)}
-                      placeholder="Chalán Beto"
-                      className="w-full bg-slate-950 border border-slate-700 text-white rounded-xl p-3 font-bold focus:border-orange-400 focus:outline-none text-sm"
-                    />
-                  </div>
+                {includeOperatorAccount ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-3 border-t border-slate-800">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-300 mb-1">Nombre del Operario</label>
+                      <input
+                        type="text"
+                        value={newOpName}
+                        onChange={(e) => setNewOpName(e.target.value)}
+                        placeholder="Chalán Beto"
+                        className="w-full bg-slate-950 border border-slate-700 text-white rounded-xl p-3 font-bold focus:border-orange-400 focus:outline-none text-sm"
+                      />
+                    </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">Correo de Ingreso (Login) *</label>
-                    <input
-                      type="email"
-                      required
-                      value={newOpEmail}
-                      onChange={(e) => setNewOpEmail(e.target.value)}
-                      placeholder="operario@taller.com"
-                      className="w-full bg-slate-950 border border-slate-700 text-white rounded-xl p-3 font-bold focus:border-orange-400 focus:outline-none text-sm"
-                    />
-                  </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-300 mb-1">Correo de Ingreso (Login) *</label>
+                      <input
+                        type="email"
+                        required={includeOperatorAccount}
+                        value={newOpEmail}
+                        onChange={(e) => setNewOpEmail(e.target.value)}
+                        placeholder="operario@taller.com"
+                        className="w-full bg-slate-950 border border-slate-700 text-white rounded-xl p-3 font-bold focus:border-orange-400 focus:outline-none text-sm"
+                      />
+                    </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">Contraseña de Acceso</label>
-                    <input
-                      type="text"
-                      value={newOpPassword}
-                      onChange={(e) => setNewOpPassword(e.target.value)}
-                      placeholder="chalan2026"
-                      className="w-full bg-slate-950 border border-slate-700 text-orange-300 rounded-xl p-3 font-mono font-bold focus:border-orange-400 focus:outline-none text-sm"
-                    />
+                    <div>
+                      <label className="block text-xs font-bold text-slate-300 mb-1">Contraseña de Acceso</label>
+                      <input
+                        type="text"
+                        value={newOpPassword}
+                        onChange={(e) => setNewOpPassword(e.target.value)}
+                        placeholder="chalan2026"
+                        className="w-full bg-slate-950 border border-slate-700 text-orange-300 rounded-xl p-3 font-mono font-bold focus:border-orange-400 focus:outline-none text-sm"
+                      />
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="bg-slate-950/60 p-4 rounded-xl border border-slate-800 text-xs text-slate-400 flex items-center gap-3">
+                    <span className="text-xl">ℹ️</span>
+                    <span>
+                      <strong>Cuenta no obligatoria:</strong> Si este taller no cuenta con chalán o no requiere acceso secundario, se creará únicamente la cuenta del Maestro. Podrás crear o activar al operario en cualquier momento con 1 solo clic.
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Botón de Guardar */}
@@ -1046,22 +1163,44 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
                 <p className="text-xs text-slate-400">Privilegios: Módulo 1 (Diseño), Módulo 2 (Corte), Módulo 3 (Armado), Módulo 4 (Cotizaciones & Catálogo de Precios).</p>
               </div>
 
-              {/* Tarjeta Operario */}
-              <div className="bg-slate-900 p-4 rounded-2xl border border-orange-500/40 space-y-2">
-                <div className="flex justify-between items-center">
-                  <h4 className="font-black text-orange-300 text-sm uppercase">🔨 Acceso Operario / Chalán</h4>
-                  <button
-                    onClick={() => handleCopyText(`Taller: ${credentialsModalTenant.name}\nUsuario Operario: ${credentialsModalTenant.operatorAccount.email}\nContraseña: ${credentialsModalTenant.operatorAccount.password || 'chalan2026'}\nAcceso solo taller: https://carpinteriapro.app`, 'copy_op_block')}
-                    className="text-xs bg-orange-500 text-white font-black px-3 py-1 rounded-lg flex items-center gap-1 cursor-pointer"
-                  >
-                    {copiedKey === 'copy_op_block' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                    Copiar Datos Operario
-                  </button>
+              {/* Tarjeta Operario (Si existe o si está desactivada) */}
+              {credentialsModalTenant.operatorAccount ? (
+                <div className="bg-slate-900 p-4 rounded-2xl border border-orange-500/40 space-y-2">
+                  <div className="flex justify-between items-center">
+                    <h4 className="font-black text-orange-300 text-sm uppercase">🔨 Acceso Operario / Chalán</h4>
+                    <button
+                      onClick={() => handleCopyText(`Taller: ${credentialsModalTenant.name}\nUsuario Operario: ${credentialsModalTenant.operatorAccount!.email}\nContraseña: ${credentialsModalTenant.operatorAccount!.password || 'chalan2026'}\nAcceso solo taller: https://carpinteriapro.app`, 'copy_op_block')}
+                      className="text-xs bg-orange-500 text-white font-black px-3 py-1 rounded-lg flex items-center gap-1 cursor-pointer"
+                    >
+                      {copiedKey === 'copy_op_block' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                      Copiar Datos Operario
+                    </button>
+                  </div>
+                  <p className="text-sm text-slate-300"><strong>Usuario:</strong> {credentialsModalTenant.operatorAccount.email}</p>
+                  <p className="text-sm text-slate-300"><strong>Contraseña:</strong> <span className="font-mono text-orange-400">{credentialsModalTenant.operatorAccount.password || 'chalan2026'}</span></p>
+                  <p className="text-xs text-slate-400">Privilegios: Solo Módulos 2 (Corte en Sierra) y Módulo 3 (Armado & Canteado). Precios y cotizaciones 100% ocultos.</p>
                 </div>
-                <p className="text-sm text-slate-300"><strong>Usuario:</strong> {credentialsModalTenant.operatorAccount.email}</p>
-                <p className="text-sm text-slate-300"><strong>Contraseña:</strong> <span className="font-mono text-orange-400">{credentialsModalTenant.operatorAccount.password || 'chalan2026'}</span></p>
-                <p className="text-xs text-slate-400">Privilegios: Solo Módulos 2 (Corte en Sierra) y Módulo 3 (Armado & Canteado). Precios y cotizaciones 100% ocultos.</p>
-              </div>
+              ) : (
+                <div className="bg-slate-900/60 p-4 rounded-2xl border border-dashed border-slate-800 space-y-2">
+                  <div className="flex justify-between items-center">
+                    <h4 className="font-black text-slate-400 text-sm uppercase">🔨 Cuenta Operario / Chalán</h4>
+                    <button
+                      onClick={() => {
+                        const updated = createOrActivateTenantOperator(credentialsModalTenant.id);
+                        refreshData();
+                        if (updated) setCredentialsModalTenant(updated);
+                      }}
+                      className="text-xs bg-orange-600 hover:bg-orange-500 text-white font-black px-3 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer shadow"
+                    >
+                      <Sparkles className="w-3 h-3 text-amber-200" />
+                      Activar Operario (1 Clic)
+                    </button>
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    Este taller no cuenta con acceso de operario activo. Opera únicamente con la cuenta del Maestro.
+                  </p>
+                </div>
+              )}
             </div>
 
             <div className="pt-2 flex justify-end">

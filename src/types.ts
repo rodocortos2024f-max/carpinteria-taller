@@ -30,7 +30,7 @@ export interface WorkshopTenant {
   createdAt: string;
   lastAccess: string;
   masterAccount: WorkshopUserAccount;
-  operatorAccount: WorkshopUserAccount;
+  operatorAccount?: WorkshopUserAccount;
   activeProjectsCount?: number;
   totalProjectsCount?: number;
   monthlyStats?: {

@@ -220,10 +220,15 @@ export default function App() {
 
   // Super Admin Action: Simulate/Switch into a client workshop
   const handleSimulateTenantLogin = (tenant: WorkshopTenant, role: 'maestro' | 'operario') => {
+    if (role === 'operario' && !tenant.operatorAccount) {
+      alert(`El taller "${tenant.name}" no tiene configurada una cuenta de Operario.`);
+      return;
+    }
+
     const simUser: User = {
-      id: role === 'maestro' ? tenant.masterAccount.id : tenant.operatorAccount.id,
-      name: role === 'maestro' ? tenant.masterAccount.name : tenant.operatorAccount.name,
-      email: role === 'maestro' ? tenant.masterAccount.email : tenant.operatorAccount.email,
+      id: role === 'maestro' ? tenant.masterAccount.id : tenant.operatorAccount!.id,
+      name: role === 'maestro' ? tenant.masterAccount.name : tenant.operatorAccount!.name,
+      email: role === 'maestro' ? tenant.masterAccount.email : tenant.operatorAccount!.email,
       role: role,
       tenantId: tenant.id,
       tenantName: tenant.name,
