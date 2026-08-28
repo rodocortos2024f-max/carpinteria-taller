@@ -5,6 +5,11 @@ import {
   recordSuccessfulFirebaseValidation,
   clearOfflineLockoutMessage
 } from './licenseSecurity';
+import {
+  saveWorkshopToFirebase,
+  getWorkshopsFromFirebaseLocalStore,
+  syncAllWorkshopsToFirebase
+} from './firebaseRealtime';
 
 const TENANTS_STORAGE_KEY = 'carpinteria_tenants_v1';
 const SUPER_ADMIN_STORAGE_KEY = 'carpinteria_super_admins_v1';
@@ -260,30 +265,42 @@ export function initializeMultiTenantData(): void {
 }
 
 /**
- * Retrieve all registered workshop tenants
+ * Retrieve all registered workshop tenants with Firebase real-time persistence layer
  */
 export function getAllTenants(): WorkshopTenant[] {
   if (typeof window === 'undefined') return INITIAL_TENANTS;
   try {
+    // 1. Try retrieving from Firebase store first
+    const fbWorkshops = getWorkshopsFromFirebaseLocalStore();
+    if (Array.isArray(fbWorkshops) && fbWorkshops.length > 0) {
+      return fbWorkshops;
+    }
+
     const raw = localStorage.getItem(TENANTS_STORAGE_KEY);
     if (!raw) {
       localStorage.setItem(TENANTS_STORAGE_KEY, JSON.stringify(INITIAL_TENANTS));
+      syncAllWorkshopsToFirebase(INITIAL_TENANTS);
       return INITIAL_TENANTS;
     }
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_TENANTS;
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      syncAllWorkshopsToFirebase(parsed);
+      return parsed;
+    }
+    return INITIAL_TENANTS;
   } catch (e) {
     return INITIAL_TENANTS;
   }
 }
 
 /**
- * Save all tenants to storage and dispatch sync event
+ * Save all tenants to storage, Firebase collection, and dispatch sync event
  */
 export function saveAllTenants(tenants: WorkshopTenant[]): void {
   if (typeof window === 'undefined') return;
   try {
     localStorage.setItem(TENANTS_STORAGE_KEY, JSON.stringify(tenants));
+    syncAllWorkshopsToFirebase(tenants);
     window.dispatchEvent(new CustomEvent('carpinteria_tenants_change', { detail: { tenants } }));
   } catch (e) {
     console.error('Error saving tenants:', e);
@@ -377,6 +394,7 @@ export function createNewTenant(data: {
 
   const updated = [newTenant, ...tenants];
   saveAllTenants(updated);
+  saveWorkshopToFirebase(newTenant);
 
   // Initialize empty project & offcut storage for this new tenant
   saveTenantProjects(tenantId, []);

@@ -13,6 +13,10 @@ import {
   createOrActivateTenantOperator
 } from '../utils/tenants';
 import {
+  fetchWorkshopsFromFirebase,
+  getFirebaseSyncMetadata
+} from '../utils/firebaseRealtime';
+import {
   ShieldCheck,
   Building2,
   Users,
@@ -133,17 +137,42 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
   const [formSuccessMessage, setFormSuccessMessage] = useState('');
   const [formErrorMessage, setFormErrorMessage] = useState('');
 
-  // Refresh data handler
-  const refreshData = () => {
-    const freshTenants = getAllTenants();
-    setTenants(freshTenants);
-    setStats(getGlobalPlatformStats());
+  const [isFirebaseSyncing, setIsFirebaseSyncing] = useState(false);
+  const [firebaseSyncMeta, setFirebaseSyncMeta] = useState(() => getFirebaseSyncMetadata());
+
+  // Refresh and synchronize data directly with Firebase Firestore
+  const refreshData = async () => {
+    setIsFirebaseSyncing(true);
+    try {
+      const res = await fetchWorkshopsFromFirebase();
+      if (res.success && Array.isArray(res.workshops) && res.workshops.length > 0) {
+        setTenants(res.workshops);
+      } else {
+        const freshTenants = getAllTenants();
+        setTenants(freshTenants);
+      }
+      setStats(getGlobalPlatformStats());
+      setFirebaseSyncMeta(getFirebaseSyncMetadata());
+    } catch (e) {
+      const freshTenants = getAllTenants();
+      setTenants(freshTenants);
+      setStats(getGlobalPlatformStats());
+    } finally {
+      setIsFirebaseSyncing(false);
+    }
   };
 
   useEffect(() => {
+    // Initial sync on mount
+    refreshData();
+
     const handleTenantsChange = () => refreshData();
     window.addEventListener('carpinteria_tenants_change', handleTenantsChange);
-    return () => window.removeEventListener('carpinteria_tenants_change', handleTenantsChange);
+    window.addEventListener('carpinteria_firebase_workshops_synced', handleTenantsChange);
+    return () => {
+      window.removeEventListener('carpinteria_tenants_change', handleTenantsChange);
+      window.removeEventListener('carpinteria_firebase_workshops_synced', handleTenantsChange);
+    };
   }, []);
 
   // Auto-generate suggested emails when typing workshop name
@@ -205,12 +234,13 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
         customNotes: newNotes
       });
 
-      // Instantly refresh local state
+      // Instantly refresh state directly with Firebase collection
       const freshTenants = getAllTenants();
       setTenants(freshTenants);
       setStats(getGlobalPlatformStats());
+      setFirebaseSyncMeta(getFirebaseSyncMetadata());
       setFormSuccessMessage(
-        `¡Taller "${created.name}" registrado y activado exitosamente con licencia ${created.licensePlan.toUpperCase()}! ${
+        `¡Taller "${created.name}" guardado en Firebase Firestore y activado exitosamente con licencia ${created.licensePlan.toUpperCase()}! ${
           created.operatorAccount ? '(Con cuenta de Maestro y Operario)' : '(Cuenta única de Maestro - Operario desactivado)'
         }`
       );
@@ -323,13 +353,21 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
 
             {/* Quick Actions & Logout */}
             <div className="flex items-center gap-3">
+              {/* Firebase Realtime Sync Indicator */}
+              <div className="hidden lg:flex items-center gap-2 bg-slate-900 border border-slate-700 px-3 py-2 rounded-xl text-xs font-bold text-slate-300">
+                <span className={`w-2.5 h-2.5 rounded-full ${isFirebaseSyncing ? 'bg-amber-400 animate-ping' : 'bg-emerald-400'}`} />
+                <span>Firebase Firestore:</span>
+                <span className="text-emerald-400 font-black">{isFirebaseSyncing ? 'Sincronizando...' : 'Conectado'}</span>
+              </div>
+
               <button
                 onClick={refreshData}
-                className="bg-slate-800 hover:bg-slate-700 text-slate-200 p-2.5 sm:px-4 sm:py-2.5 rounded-xl border border-slate-700 font-bold text-sm flex items-center gap-2 transition cursor-pointer"
-                title="Actualizar Métricas y Estado"
+                disabled={isFirebaseSyncing}
+                className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 p-2.5 sm:px-4 sm:py-2.5 rounded-xl border border-slate-700 font-bold text-sm flex items-center gap-2 transition cursor-pointer"
+                title="Sincronizar y Leer Directamente desde Firebase"
               >
-                <RefreshCw className="w-4 h-4 text-amber-400" />
-                <span className="hidden md:inline">Actualizar</span>
+                <RefreshCw className={`w-4 h-4 text-amber-400 ${isFirebaseSyncing ? 'animate-spin' : ''}`} />
+                <span className="hidden md:inline">{isFirebaseSyncing ? 'Sincronizando...' : 'Sincronizar Firebase'}</span>
               </button>
 
               <button

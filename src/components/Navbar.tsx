@@ -242,46 +242,17 @@ export const Navbar: React.FC<NavbarProps> = ({
                   </div>
                 </div>
 
-                {/* Offline License & Connectivity Status Pill */}
-                <button
-                  type="button"
-                  onClick={onToggleFirebaseInfo}
-                  className={`p-2 sm:px-3 sm:py-2 rounded-xl border flex items-center gap-1.5 sm:gap-2 text-xs font-bold transition shadow cursor-pointer ${
-                    offlineStatus.isExpired
-                      ? 'bg-rose-900/90 text-rose-200 border-rose-500 animate-pulse'
-                      : offlineStatus.isOnline
-                      ? 'bg-emerald-950/80 hover:bg-emerald-900 text-emerald-200 border-emerald-600/70'
-                      : 'bg-amber-900/90 hover:bg-amber-800 text-amber-200 border-amber-600/80'
-                  }`}
-                  title={`Última validación Firebase: ${offlineStatus.lastValidationFormatted} (Clic para detalles)`}
-                >
-                  {offlineStatus.isExpired ? (
-                    <>
-                      <WifiOff className="w-4 h-4 text-rose-400 shrink-0" />
-                      <span className="hidden md:inline font-black text-rose-300">Licencia Expirada</span>
-                    </>
-                  ) : offlineStatus.isOnline ? (
-                    <>
-                      <Wifi className="w-4 h-4 text-emerald-400 shrink-0" />
-                      <span className="hidden md:inline font-black text-emerald-300">Online</span>
-                      <span className="hidden xl:inline text-emerald-400/80">• 24h Offline</span>
-                    </>
-                  ) : (
-                    <>
-                      <Clock className="w-4 h-4 text-amber-400 shrink-0" />
-                      <span className="hidden md:inline font-black text-amber-300">{offlineStatus.hoursRemaining}h offline</span>
-                    </>
-                  )}
-                </button>
-
-                <button
-                  onClick={onToggleFirebaseInfo}
-                  className="bg-amber-900 hover:bg-amber-800 text-amber-200 p-2.5 sm:p-3 rounded-xl border border-amber-700/80 flex items-center gap-2 text-sm font-bold transition cursor-pointer"
-                  title="Estado Multi-Tenant & Firebase"
-                >
-                  <Flame className="w-5 h-5 text-amber-400" />
-                  <span className="hidden sm:inline">Firebase</span>
-                </button>
+                {/* Firebase & Multi-Tenant Control Button (100% EXCLUSIVO PARA SUPER ADMIN) */}
+                {isSuperAdmin && (
+                  <button
+                    onClick={onToggleFirebaseInfo}
+                    className="bg-amber-900 hover:bg-amber-800 text-amber-200 p-2.5 sm:px-3.5 sm:py-2.5 rounded-xl border border-amber-700/80 flex items-center gap-2 text-xs sm:text-sm font-bold transition shadow-md cursor-pointer"
+                    title="Configuración y Estado Firebase Firestore"
+                  >
+                    <Flame className="w-5 h-5 text-amber-400 animate-pulse" />
+                    <span className="hidden sm:inline">Firebase</span>
+                  </button>
+                )}
 
                 <button
                   onClick={onLogout}
