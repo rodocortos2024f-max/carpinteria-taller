@@ -128,12 +128,18 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full bg-amber-700 hover:bg-amber-800 text-white border-2 border-amber-900 active:bg-amber-900 shadow-xl py-4.5 text-xl sm:text-2xl font-black tracking-wide rounded-2xl uppercase mt-4 flex items-center justify-center gap-3 cursor-pointer transition transform active:scale-98"
+              className="w-full bg-gradient-to-r from-orange-600 via-amber-600 to-orange-700 hover:from-orange-500 hover:via-amber-500 hover:to-orange-600 text-white border-4 border-amber-950 ring-2 ring-amber-300/70 active:from-orange-700 active:to-amber-800 shadow-2xl shadow-orange-900/40 py-5 text-xl sm:text-2xl font-black tracking-wider rounded-2xl uppercase mt-6 flex items-center justify-center gap-3 cursor-pointer transition-all duration-200 transform hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]"
             >
-              <LogIn className="w-7 h-7 text-amber-300" />
-              {isLoading ? 'VERIFICANDO...' : 'INICIAR SESIÓN'}
+              <LogIn className="w-7 h-7 sm:w-8 sm:h-8 text-amber-200 shrink-0 filter drop-shadow" />
+              <span className="drop-shadow-md">{isLoading ? 'VERIFICANDO CREDENCIALES...' : 'INICIAR SESIÓN'}</span>
             </button>
           </form>
+
+          {/* PWA & Security Notice */}
+          <div className="pt-2 flex items-center justify-center gap-2 text-xs font-bold text-slate-500">
+            <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span>Modo Offline PWA Activo • Datos del Taller Guardados Localmente</span>
+          </div>
 
         </div>
 

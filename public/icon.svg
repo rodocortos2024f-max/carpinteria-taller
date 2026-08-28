@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3d2110" />
+      <stop offset="50%" stop-color="#241208" />
+      <stop offset="100%" stop-color="#150a04" />
+    </linearGradient>
+    <linearGradient id="woodBorder" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f59e0b" />
+      <stop offset="50%" stop-color="#d97706" />
+      <stop offset="100%" stop-color="#b45309" />
+    </linearGradient>
+    <linearGradient id="bladeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f8fafc" />
+      <stop offset="50%" stop-color="#cbd5e1" />
+      <stop offset="100%" stop-color="#94a3b8" />
+    </linearGradient>
+    <linearGradient id="handleGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#b45309" />
+      <stop offset="50%" stop-color="#78350f" />
+      <stop offset="100%" stop-color="#451a03" />
+    </linearGradient>
+    <linearGradient id="goldAccent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#fbbf24" />
+      <stop offset="100%" stop-color="#f59e0b" />
+    </linearGradient>
+    <filter id="dropShadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000000" flood-opacity="0.6"/>
+    </filter>
+  </defs>
+
+  <!-- Background Squircle -->
+  <rect x="16" y="16" width="480" height="480" rx="108" fill="url(#bgGrad)" stroke="url(#woodBorder)" stroke-width="12" />
+
+  <!-- Inner Subtle Ring -->
+  <circle cx="256" cy="256" r="216" fill="none" stroke="#f59e0b" stroke-width="3" stroke-dasharray="8 6" opacity="0.4" />
+
+  <!-- Carpenter Emblem Graphic -->
+  <g filter="url(#dropShadow)">
+    <!-- Crossed Carpenter Ruler / Wood Plank in Background -->
+    <rect x="120" y="244" width="272" height="24" rx="6" transform="rotate(-45 256 256)" fill="#d97706" stroke="#78350f" stroke-width="3"/>
+    <!-- Ruler Markings -->
+    <g transform="rotate(-45 256 256)" stroke="#451a03" stroke-width="2" opacity="0.75">
+      <line x1="140" y1="244" x2="140" y2="254" />
+      <line x1="160" y1="244" x2="160" y2="251" />
+      <line x1="180" y1="244" x2="180" y2="254" />
+      <line x1="200" y1="244" x2="200" y2="251" />
+      <line x1="220" y1="244" x2="220" y2="254" />
+      <line x1="240" y1="244" x2="240" y2="251" />
+      <line x1="260" y1="244" x2="260" y2="254" />
+      <line x1="280" y1="244" x2="280" y2="251" />
+      <line x1="300" y1="244" x2="300" y2="254" />
+      <line x1="320" y1="244" x2="320" y2="251" />
+      <line x1="340" y1="244" x2="340" y2="254" />
+      <line x1="360" y1="244" x2="360" y2="251" />
+      <line x1="380" y1="244" x2="380" y2="254" />
+    </g>
+
+    <!-- Professional Hand Saw (Serrucho de Carpintero) -->
+    <g transform="rotate(25 256 256)">
+      <!-- Saw Blade -->
+      <path d="M 120,240 
+               L 370,215 
+               L 370,270 
+               L 350,262 L 340,270 L 330,262 L 320,270 L 310,262 L 300,270 
+               L 290,262 L 280,270 L 270,262 L 260,270 L 250,262 L 240,270 
+               L 230,262 L 220,270 L 210,262 L 200,270 L 190,262 L 180,270 
+               L 170,262 L 160,270 L 150,262 L 140,270 L 130,262 L 120,270 Z" 
+            fill="url(#bladeGrad)" 
+            stroke="#64748b" 
+            stroke-width="3" />
+
+      <!-- Saw Blade Shine -->
+      <path d="M 130,245 L 360,222 L 350,234 L 135,252 Z" fill="#ffffff" opacity="0.6" />
+
+      <!-- Saw Handle (Mango de Madera Ergonómico) -->
+      <path d="M 95,200 
+               C 135,200 145,225 140,245 
+               L 142,275 
+               C 145,295 130,315 100,315 
+               C 70,315 65,290 70,265 
+               C 65,235 70,200 95,200 Z" 
+            fill="url(#handleGrad)" 
+            stroke="#f59e0b" 
+            stroke-width="4" />
+      
+      <!-- Handle Grip Hole -->
+      <path d="M 95,230 
+               C 112,230 115,245 112,260 
+               C 110,275 100,285 92,285 
+               C 82,285 80,270 82,255 
+               C 85,240 88,230 95,230 Z" 
+            fill="#241208" 
+            stroke="#78350f" 
+            stroke-width="3" />
+
+      <!-- Handle Brass Rivets / Tornillos de Latón -->
+      <circle cx="126" cy="235" r="5" fill="#fde047" stroke="#b45309" stroke-width="2"/>
+      <circle cx="128" cy="265" r="5" fill="#fde047" stroke="#b45309" stroke-width="2"/>
+      <circle cx="102" cy="296" r="4" fill="#fde047" stroke="#b45309" stroke-width="1.5"/>
+    </g>
+
+    <!-- Wood Log & Chisels / Sparkle Details -->
+    <g transform="translate(256, 380)">
+      <!-- Badge Banner -->
+      <rect x="-140" y="-22" width="280" height="44" rx="14" fill="#d97706" stroke="#fef08a" stroke-width="3" />
+      <text x="0" y="8" font-family="'Lexend', system-ui, -apple-system, sans-serif" font-weight="900" font-size="20" fill="#241208" text-anchor="middle" letter-spacing="3">
+        CARPINTERÍA
+      </text>
+    </g>
+  </g>
+</svg>

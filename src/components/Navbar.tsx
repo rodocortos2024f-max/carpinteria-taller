@@ -48,8 +48,8 @@ export const Navbar: React.FC<NavbarProps> = ({
               }
             }}
           >
-            <div className="bg-amber-600 text-amber-950 p-2.5 sm:p-3 rounded-2xl shadow-lg border-2 border-amber-400 flex items-center justify-center">
-              <span className="text-2xl sm:text-3xl">🪚</span>
+            <div className="bg-amber-600 p-2 sm:p-2.5 rounded-2xl shadow-lg border-2 border-amber-400 flex items-center justify-center overflow-hidden shrink-0">
+              <img src="/icon.svg" alt="Carpintería" className="w-7 h-7 sm:w-8 sm:h-8 object-contain drop-shadow" />
             </div>
             <div>
               <div className="flex items-center gap-2">

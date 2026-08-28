@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="favBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#451a03" />
+      <stop offset="100%" stop-color="#1c0a00" />
+    </linearGradient>
+    <linearGradient id="favGold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f59e0b" />
+      <stop offset="100%" stop-color="#b45309" />
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#favBg)" stroke="url(#favGold)" stroke-width="6" />
+  <g transform="translate(64, 64) scale(0.24)">
+    <g transform="translate(-256, -256)">
+      <rect x="120" y="244" width="272" height="24" rx="6" transform="rotate(-45 256 256)" fill="#d97706" stroke="#78350f" stroke-width="3"/>
+      <g transform="rotate(25 256 256)">
+        <path d="M 120,240 L 370,215 L 370,270 L 350,262 L 340,270 L 330,262 L 320,270 L 310,262 L 300,270 L 290,262 L 280,270 L 270,262 L 260,270 L 250,262 L 240,270 L 230,262 L 220,270 L 210,262 L 200,270 L 190,262 L 180,270 L 170,262 L 160,270 L 150,262 L 140,270 L 130,262 L 120,270 Z" fill="#f1f5f9" stroke="#64748b" stroke-width="4" />
+        <path d="M 95,200 C 135,200 145,225 140,245 L 142,275 C 145,295 130,315 100,315 C 70,315 65,290 70,265 C 65,235 70,200 95,200 Z" fill="#b45309" stroke="#f59e0b" stroke-width="5" />
+        <path d="M 95,230 C 112,230 115,245 112,260 C 110,275 100,285 92,285 C 82,285 80,270 82,255 C 85,240 88,230 95,230 Z" fill="#1c0a00" stroke="#78350f" stroke-width="4" />
+      </g>
+    </g>
+  </g>
+</svg>
