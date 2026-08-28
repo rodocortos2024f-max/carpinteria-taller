@@ -7,15 +7,15 @@ import {
   toggleTenantStatus,
   deleteTenant,
   getGlobalPlatformStats,
-  saveAllTenants,
   getTenantProjects,
   removeTenantOperatorAccount,
   createOrActivateTenantOperator
 } from '../utils/tenants';
 import {
-  fetchWorkshopsFromFirebase,
-  getFirebaseSyncMetadata
-} from '../utils/firebaseRealtime';
+  subscribeToWorkshopsRealtime,
+  fetchWorkshopsOnce,
+  saveWorkshopToFirestore
+} from '../utils/firebaseWorkshops';
 import {
   ShieldCheck,
   Building2,
@@ -60,10 +60,7 @@ import {
   XAxis,
   YAxis,
   Tooltip,
-  CartesianGrid,
-  PieChart,
-  Pie,
-  Cell
+  CartesianGrid
 } from 'recharts';
 
 interface SuperAdminPanelProps {
@@ -86,7 +83,6 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
   const [statusFilter, setStatusFilter] = useState<'all' | 'activa' | 'suspendida'>('all');
 
   // Modal / Form States
-  const [editingTenant, setEditingTenant] = useState<WorkshopTenant | null>(null);
   const [credentialsModalTenant, setCredentialsModalTenant] = useState<WorkshopTenant | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
@@ -136,44 +132,53 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
 
   const [formSuccessMessage, setFormSuccessMessage] = useState('');
   const [formErrorMessage, setFormErrorMessage] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [isFirebaseSyncing, setIsFirebaseSyncing] = useState(false);
-  const [firebaseSyncMeta, setFirebaseSyncMeta] = useState(() => getFirebaseSyncMetadata());
+  const [firestoreConnected, setFirestoreConnected] = useState(true);
 
-  // Refresh and synchronize data directly with Firebase Firestore
-  const refreshData = async () => {
+  // Subscribe directly to Firestore onSnapshot in real time
+  useEffect(() => {
+    setIsFirebaseSyncing(true);
+
+    const unsubscribe = subscribeToWorkshopsRealtime(
+      (updatedWorkshops) => {
+        // Clean out legacy demo workshops
+        const filtered = updatedWorkshops.filter(
+          w => w.id !== 'taller_don_jose' && w.id !== 'taller_los_cedros' && w.id !== 'taller_cocinas_vanguardia'
+        );
+        setTenants(filtered);
+        setStats(getGlobalPlatformStats());
+        setIsFirebaseSyncing(false);
+        setFirestoreConnected(true);
+      },
+      (error) => {
+        console.warn('Firestore onSnapshot subscription notice:', error);
+        setIsFirebaseSyncing(false);
+      }
+    );
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  // Manual Refresh directly with Firebase Firestore
+  const handleManualRefresh = async () => {
     setIsFirebaseSyncing(true);
     try {
-      const res = await fetchWorkshopsFromFirebase();
-      if (res.success && Array.isArray(res.workshops) && res.workshops.length > 0) {
-        setTenants(res.workshops);
-      } else {
-        const freshTenants = getAllTenants();
-        setTenants(freshTenants);
-      }
+      const workshops = await fetchWorkshopsOnce();
+      const filtered = workshops.filter(
+        w => w.id !== 'taller_don_jose' && w.id !== 'taller_los_cedros' && w.id !== 'taller_cocinas_vanguardia'
+      );
+      setTenants(filtered);
       setStats(getGlobalPlatformStats());
-      setFirebaseSyncMeta(getFirebaseSyncMetadata());
     } catch (e) {
-      const freshTenants = getAllTenants();
-      setTenants(freshTenants);
-      setStats(getGlobalPlatformStats());
+      console.warn('Error refreshing workshops:', e);
     } finally {
       setIsFirebaseSyncing(false);
     }
   };
-
-  useEffect(() => {
-    // Initial sync on mount
-    refreshData();
-
-    const handleTenantsChange = () => refreshData();
-    window.addEventListener('carpinteria_tenants_change', handleTenantsChange);
-    window.addEventListener('carpinteria_firebase_workshops_synced', handleTenantsChange);
-    return () => {
-      window.removeEventListener('carpinteria_tenants_change', handleTenantsChange);
-      window.removeEventListener('carpinteria_firebase_workshops_synced', handleTenantsChange);
-    };
-  }, []);
 
   // Auto-generate suggested emails when typing workshop name
   const handleWorkshopNameChange = (val: string) => {
@@ -192,8 +197,8 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
     }
   };
 
-  // Create Tenant Handler
-  const handleCreateTenant = (e: React.FormEvent) => {
+  // Create Tenant Handler in Firestore & Firebase Auth
+  const handleCreateTenant = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormErrorMessage('');
     setFormSuccessMessage('');
@@ -213,8 +218,10 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
       return;
     }
 
+    setIsSubmitting(true);
+
     try {
-      const created = createNewTenant({
+      const created = await createNewTenant({
         name: newWorkshopName,
         ownerName: newOwnerName,
         tradeName: newWorkshopName,
@@ -234,14 +241,9 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
         customNotes: newNotes
       });
 
-      // Instantly refresh state directly with Firebase collection
-      const freshTenants = getAllTenants();
-      setTenants(freshTenants);
-      setStats(getGlobalPlatformStats());
-      setFirebaseSyncMeta(getFirebaseSyncMetadata());
       setFormSuccessMessage(
         `¡Taller "${created.name}" guardado en Firebase Firestore y activado exitosamente con licencia ${created.licensePlan.toUpperCase()}! ${
-          created.operatorAccount ? '(Con cuenta de Maestro y Operario)' : '(Cuenta única de Maestro - Operario desactivado)'
+          created.operatorAccount ? '(Con cuenta de Maestro y Operario en Firebase Auth)' : '(Cuenta única de Maestro - Operario desactivado)'
         }`
       );
       
@@ -266,35 +268,33 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
       setActiveTab('tenants');
     } catch (err: any) {
       setFormErrorMessage('Error al crear el taller: ' + (err.message || String(err)));
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  // Toggle Status
-  const handleToggleStatus = (tenantId: string) => {
-    toggleTenantStatus(tenantId);
-    refreshData();
+  // Toggle Status in Firestore
+  const handleToggleStatus = async (tenantId: string) => {
+    await toggleTenantStatus(tenantId);
   };
 
-  // Delete Tenant
-  const handleDeleteTenant = (tenant: WorkshopTenant) => {
-    if (window.confirm(`¿Está seguro de eliminar definitivamente el taller "${tenant.name}" y todos sus proyectos aislados?`)) {
-      deleteTenant(tenant.id);
-      refreshData();
+  // Delete Tenant from Firestore & local caches
+  const handleDeleteTenant = async (tenant: WorkshopTenant) => {
+    if (window.confirm(`¿Está seguro de eliminar definitivamente el taller "${tenant.name}" de Firebase Firestore y todos sus registros asociados?`)) {
+      await deleteTenant(tenant.id);
     }
   };
 
-  // Delete Operator Account
-  const handleDeleteOperatorAccount = (tenant: WorkshopTenant) => {
-    if (window.confirm(`¿Desea eliminar la cuenta de Operario del taller "${tenant.name}"?\n\nEl operario ya no podrá iniciar sesión. Podrá reactivarla o crearla nuevamente en cualquier momento con un solo clic.`)) {
-      removeTenantOperatorAccount(tenant.id);
-      refreshData();
+  // Delete Operator Account in Firestore
+  const handleDeleteOperatorAccount = async (tenant: WorkshopTenant) => {
+    if (window.confirm(`¿Desea eliminar la cuenta de Operario del taller "${tenant.name}" de Firestore?\n\nEl operario ya no podrá iniciar sesión. Podrá reactivarla o crearla nuevamente en cualquier momento con un solo clic.`)) {
+      await removeTenantOperatorAccount(tenant.id);
     }
   };
 
-  // Quick 1-Click Activate Operator Account
-  const handleQuickActivateOperator = (tenant: WorkshopTenant) => {
-    const updated = createOrActivateTenantOperator(tenant.id);
-    refreshData();
+  // Quick 1-Click Activate Operator Account in Firestore
+  const handleQuickActivateOperator = async (tenant: WorkshopTenant) => {
+    const updated = await createOrActivateTenantOperator(tenant.id);
     if (updated) {
       setCredentialsModalTenant(updated);
     }
@@ -319,8 +319,6 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
     const matchesStatus = statusFilter === 'all' || t.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
-
-  const CHART_COLORS = ['#d97706', '#059669', '#4f46e5', '#dc2626', '#0284c7', '#8b5cf6'];
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 pb-16">
@@ -356,18 +354,18 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
               {/* Firebase Realtime Sync Indicator */}
               <div className="hidden lg:flex items-center gap-2 bg-slate-900 border border-slate-700 px-3 py-2 rounded-xl text-xs font-bold text-slate-300">
                 <span className={`w-2.5 h-2.5 rounded-full ${isFirebaseSyncing ? 'bg-amber-400 animate-ping' : 'bg-emerald-400'}`} />
-                <span>Firebase Firestore:</span>
-                <span className="text-emerald-400 font-black">{isFirebaseSyncing ? 'Sincronizando...' : 'Conectado'}</span>
+                <span>Firestore Realtime:</span>
+                <span className="text-emerald-400 font-black">{isFirebaseSyncing ? 'Sincronizando...' : 'Conectado (onSnapshot)'}</span>
               </div>
 
               <button
-                onClick={refreshData}
+                onClick={handleManualRefresh}
                 disabled={isFirebaseSyncing}
                 className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 p-2.5 sm:px-4 sm:py-2.5 rounded-xl border border-slate-700 font-bold text-sm flex items-center gap-2 transition cursor-pointer"
-                title="Sincronizar y Leer Directamente desde Firebase"
+                title="Sincronizar y Leer Directamente desde Firestore"
               >
                 <RefreshCw className={`w-4 h-4 text-amber-400 ${isFirebaseSyncing ? 'animate-spin' : ''}`} />
-                <span className="hidden md:inline">{isFirebaseSyncing ? 'Sincronizando...' : 'Sincronizar Firebase'}</span>
+                <span className="hidden md:inline">{isFirebaseSyncing ? 'Sincronizando...' : 'Refrescar Firestore'}</span>
               </button>
 
               <button
@@ -391,13 +389,13 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
           <div className="space-y-2">
             <span className="inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-widest text-amber-400 bg-amber-950/80 px-3 py-1 rounded-full border border-amber-600/40">
               <Sparkles className="w-3.5 h-3.5" />
-              Centro de Control Global SaaS
+              Centro de Control Global SaaS • Firebase Firestore
             </span>
             <h2 className="text-3xl sm:text-4xl font-black text-white tracking-tight">
               Gestión de Licencias y Talleres Clientes
             </h2>
             <p className="text-base sm:text-lg text-slate-300 font-medium max-w-2xl">
-              Crea nuevos talleres clientes con aislamiento de datos, asigna cuentas para Maestros y Operarios, y supervisa métricas de uso mensual.
+              Crea nuevos talleres con persistencia 100% en tiempo real en Firestore, asigna cuentas para Maestros y Operarios en Firebase Auth, y supervisa métricas globales.
             </p>
           </div>
 
@@ -410,19 +408,19 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
           </button>
         </div>
 
-        {/* Global High-Contrast KPI Cards (Piezas Optimizadas card removed per instruction) */}
+        {/* Global High-Contrast KPI Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
           
           <div className="bg-slate-950 p-6 rounded-3xl border-4 border-amber-500/40 shadow-xl space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-xs font-black uppercase tracking-wider bg-amber-950 text-amber-300 px-3 py-1 rounded-full border border-amber-700/50">
-                TALLERES REGISTRADOS
+                TALLERES EN FIRESTORE
               </span>
               <Building2 className="w-7 h-7 text-amber-400" />
             </div>
-            <p className="text-4xl sm:text-5xl font-black text-white">{stats.totalTenants}</p>
+            <p className="text-4xl sm:text-5xl font-black text-white">{tenants.length}</p>
             <p className="text-sm font-extrabold text-amber-400">
-              {stats.activeTenants} Activos • {stats.suspendedTenants} Suspendidos
+              {tenants.filter(t => t.status === 'activa').length} Activos • {tenants.filter(t => t.status === 'suspendida').length} Suspendidos
             </p>
           </div>
 
@@ -450,7 +448,7 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
               {tenants.length + tenants.filter(t => Boolean(t.operatorAccount)).length}
             </p>
             <p className="text-sm font-extrabold text-cyan-400">
-              {tenants.length} Maestros • {tenants.filter(t => Boolean(t.operatorAccount)).length} Operarios Activos
+              {tenants.length} Maestros • {tenants.filter(t => Boolean(t.operatorAccount)).length} Operarios Registrados
             </p>
           </div>
 
@@ -467,7 +465,7 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
             }`}
           >
             <Building2 className="w-6 h-6" />
-            Talleres Clientes & Licencias ({tenants.length})
+            Talleres Clientes en Firestore ({tenants.length})
           </button>
 
           <button
@@ -740,10 +738,10 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
                         <button
                           onClick={() => handleQuickActivateOperator(t)}
                           className="w-full bg-orange-700 hover:bg-orange-600 text-white font-black text-xs px-3.5 py-3 rounded-xl border border-orange-500 shadow-md flex items-center justify-center gap-2 transition cursor-pointer"
-                          title="Crear y activar cuenta de operario para este taller con un solo clic"
+                          title="Crear y activar cuenta de operario para este taller en Firestore con un solo clic"
                         >
                           <Sparkles className="w-4 h-4 text-amber-200" />
-                          <span>ACTIVAR OPERARIO (1 CLIC)</span>
+                          <span>ACTIVAR OPERARIO EN FIRESTORE (1 CLIC)</span>
                         </button>
                       </div>
                     )}
@@ -775,7 +773,7 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
                       <button
                         onClick={() => handleDeleteTenant(t)}
                         className="p-2.5 bg-slate-900 hover:bg-rose-950 text-slate-400 hover:text-rose-400 rounded-xl border border-slate-800 hover:border-rose-700 transition cursor-pointer"
-                        title="Eliminar Taller"
+                        title="Eliminar Taller de Firestore"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -787,11 +785,18 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
 
               {filteredTenants.length === 0 && (
                 <div className="bg-slate-950 p-12 rounded-3xl border-2 border-slate-800 text-center space-y-4">
-                  <div className="text-5xl">🔍</div>
-                  <h4 className="text-2xl font-black text-white">No se encontraron talleres clientes</h4>
+                  <div className="text-5xl">🪵</div>
+                  <h4 className="text-2xl font-black text-white">No hay talleres clientes registrados en Firestore</h4>
                   <p className="text-slate-400 font-medium max-w-md mx-auto">
-                    Intente con otro término de búsqueda o haga clic en "Crear Nuevo Taller Cliente".
+                    Los datos simulados han sido removidos. Haz clic en "Crear Nuevo Taller Cliente" para registrar tu primer taller en Firebase.
                   </p>
+                  <button
+                    onClick={() => setActiveTab('new_tenant')}
+                    className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-base px-6 py-3 rounded-xl border border-amber-300 transition cursor-pointer inline-flex items-center gap-2"
+                  >
+                    <PlusCircle className="w-5 h-5" />
+                    Crear Primer Taller
+                  </button>
                 </div>
               )}
             </div>
@@ -820,30 +825,36 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
                 </span>
               </div>
 
-              <div className="h-80 w-full pt-4">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={stats.monthlyTrends}>
-                    <defs>
-                      <linearGradient id="colorProjects" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.8}/>
-                        <stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/>
-                      </linearGradient>
-                      <linearGradient id="colorCuts" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.8}/>
-                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
-                    <XAxis dataKey="monthLabel" stroke="#94a3b8" fontSize={12} fontWeight={700} />
-                    <YAxis stroke="#94a3b8" fontSize={12} fontWeight={700} />
-                    <Tooltip
-                      contentStyle={{ backgroundColor: '#020617', borderColor: '#f59e0b', borderRadius: '16px', color: '#fff', fontWeight: 'bold' }}
-                    />
-                    <Area type="monotone" dataKey="projectsCount" name="Proyectos Creados" stroke="#f59e0b" strokeWidth={3} fillOpacity={1} fill="url(#colorProjects)" />
-                    <Area type="monotone" dataKey="cutsCount" name="Piezas de Corte" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorCuts)" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
+              {stats.monthlyTrends.length > 0 ? (
+                <div className="h-80 w-full pt-4">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={stats.monthlyTrends}>
+                      <defs>
+                        <linearGradient id="colorProjects" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.8}/>
+                          <stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/>
+                        </linearGradient>
+                        <linearGradient id="colorCuts" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.8}/>
+                          <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
+                      <XAxis dataKey="monthLabel" stroke="#94a3b8" fontSize={12} fontWeight={700} />
+                      <YAxis stroke="#94a3b8" fontSize={12} fontWeight={700} />
+                      <Tooltip
+                        contentStyle={{ backgroundColor: '#020617', borderColor: '#f59e0b', borderRadius: '16px', color: '#fff', fontWeight: 'bold' }}
+                      />
+                      <Area type="monotone" dataKey="projectsCount" name="Proyectos Creados" stroke="#f59e0b" strokeWidth={3} fillOpacity={1} fill="url(#colorProjects)" />
+                      <Area type="monotone" dataKey="cutsCount" name="Piezas de Corte" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorCuts)" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <div className="bg-slate-900 p-8 rounded-2xl text-center text-slate-400 font-bold">
+                  Las métricas se generarán conforme los talleres creen proyectos y despieces.
+                </div>
+              )}
             </div>
 
             {/* Table of Usage per Tenant */}
@@ -887,6 +898,13 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
                         <td className="py-4 px-4 text-right text-amber-300 font-mono text-xs">{r.lastAccess || 'Hoy'}</td>
                       </tr>
                     ))}
+                    {stats.tenantsUsageRanking.length === 0 && (
+                      <tr>
+                        <td colSpan={7} className="py-8 text-center text-slate-500 font-bold">
+                          Sin registros de uso todavía.
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -905,7 +923,7 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
                 ALTA DE NUEVO TALLER CLIENTE & LICENCIA
               </h3>
               <p className="text-base text-slate-300 font-medium">
-                Define los datos del taller cliente y genera automáticamente las cuentas aisladas del Maestro y Operario.
+                Define los datos del taller cliente y genera automáticamente las cuentas en Firebase Auth y el documento en Firestore.
               </p>
             </div>
 
@@ -1150,9 +1168,10 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
               {/* Botón de Guardar */}
               <button
                 type="submit"
-                className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-2xl py-5 rounded-2xl shadow-2xl border-2 border-amber-300 uppercase tracking-wide transition cursor-pointer"
+                disabled={isSubmitting}
+                className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-black text-2xl py-5 rounded-2xl shadow-2xl border-2 border-amber-300 uppercase tracking-wide transition cursor-pointer"
               >
-                REGISTRAR Y ACTIVAR TALLER CLIENTE
+                {isSubmitting ? 'GUARDANDO EN FIRESTORE...' : 'REGISTRAR Y GUARDAR TALLER EN FIRESTORE'}
               </button>
 
             </form>
@@ -1223,9 +1242,8 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
                   <div className="flex justify-between items-center">
                     <h4 className="font-black text-slate-400 text-sm uppercase">🔨 Cuenta Operario / Chalán</h4>
                     <button
-                      onClick={() => {
-                        const updated = createOrActivateTenantOperator(credentialsModalTenant.id);
-                        refreshData();
+                      onClick={async () => {
+                        const updated = await createOrActivateTenantOperator(credentialsModalTenant.id);
                         if (updated) setCredentialsModalTenant(updated);
                       }}
                       className="text-xs bg-orange-600 hover:bg-orange-500 text-white font-black px-3 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer shadow"

@@ -1,0 +1,50 @@
+{
+  "entities": {
+    "workshops": {
+      "title": "workshops",
+      "description": "Registered workshop tenants in the multi-tenant carpentry platform",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier of the workshop tenant" },
+        "name": { "type": "string", "description": "Workshop commercial name" },
+        "ownerName": { "type": "string", "description": "Workshop owner full name" },
+        "tradeName": { "type": "string", "description": "Trade or business name" },
+        "taxId": { "type": "string", "description": "Tax ID / RFC / CIF" },
+        "phone": { "type": "string", "description": "Contact phone number" },
+        "city": { "type": "string", "description": "City and state location" },
+        "address": { "type": "string", "description": "Physical workshop address" },
+        "licensePlan": { "type": "string", "enum": ["mensual", "anual", "vitalicia", "demo"], "description": "License subscription plan" },
+        "status": { "type": "string", "enum": ["activa", "prueba", "suspendida", "vencida"], "description": "License operational status" },
+        "licenseExpiry": { "type": "string", "description": "License expiration date (YYYY-MM-DD)" },
+        "createdAt": { "type": "string", "description": "Creation timestamp or date" },
+        "lastAccess": { "type": "string", "description": "Last access timestamp" },
+        "masterAccount": {
+          "type": "object",
+          "description": "Master account credentials & profile",
+          "properties": {
+            "id": { "type": "string" },
+            "name": { "type": "string" },
+            "email": { "type": "string" },
+            "role": { "type": "string" },
+            "password": { "type": "string" }
+          }
+        },
+        "operatorAccount": {
+          "type": "object",
+          "description": "Operator / helper account credentials & profile",
+          "properties": {
+            "id": { "type": "string" },
+            "name": { "type": "string" },
+            "email": { "type": "string" },
+            "role": { "type": "string" },
+            "password": { "type": "string" }
+          }
+        },
+        "activeProjectsCount": { "type": "number", "description": "Number of active projects" },
+        "totalProjectsCount": { "type": "number", "description": "Total lifetime projects" },
+        "customNotes": { "type": "string", "description": "Administrative notes" }
+      },
+      "required": ["id", "name", "ownerName", "phone", "city", "licensePlan", "status", "licenseExpiry", "masterAccount"]
+    }
+  }
+}
