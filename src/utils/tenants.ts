@@ -1,5 +1,10 @@
 import { WorkshopTenant, User, Project, OffcutItem, AppActivityLog, UserRole } from '../types';
 import { INITIAL_PROJECTS, INITIAL_OFFCUTS, INITIAL_LOGS } from '../data/mockData';
+import {
+  checkOfflineLicenseStatus,
+  recordSuccessfulFirebaseValidation,
+  clearOfflineLockoutMessage
+} from './licenseSecurity';
 
 const TENANTS_STORAGE_KEY = 'carpinteria_tenants_v1';
 const SUPER_ADMIN_STORAGE_KEY = 'carpinteria_super_admins_v1';
@@ -756,6 +761,10 @@ export function authenticateUserCredentials(emailInput: string, passwordInput: s
       const now = new Date();
       const lastLoginStr = now.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' }) + ' ' + now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
       
+      // Super Admin automatically revalidates online
+      recordSuccessfulFirebaseValidation('superadmin_login');
+      clearOfflineLockoutMessage();
+
       const user: User = {
         id: 'usr_super_admin_master',
         name: superAdminMatch.name,
@@ -767,6 +776,23 @@ export function authenticateUserCredentials(emailInput: string, passwordInput: s
 
       return { success: true, user };
     }
+  }
+
+  // 1.5 Verify Offline License 24-Hour Expiration Rule for Workshop Tenants
+  const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
+  const offlineStatus = checkOfflineLicenseStatus();
+
+  if (!isOnline && offlineStatus.isExpired) {
+    return {
+      success: false,
+      errorMessage: `CADUCIDAD OFFLINE (LÍMITE 24 HORAS): Han transcurrido ${offlineStatus.hoursOffline} horas sin conexión desde la última validación con Firebase (${offlineStatus.lastValidationFormatted}). Conecte el dispositivo a internet para revalidar la licencia del taller.`
+    };
+  }
+
+  // If online, record successful Firebase heartbeat / validation
+  if (isOnline) {
+    recordSuccessfulFirebaseValidation('workshop_login_online');
+    clearOfflineLockoutMessage();
   }
 
   // 2. Check Workshop Tenants (Master or Operator)

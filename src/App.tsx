@@ -13,6 +13,13 @@ import { SuperAdminPanel } from './components/SuperAdminPanel';
 import { FirebaseModal } from './components/FirebaseModal';
 import { isVoiceAudioEnabled, toggleVoiceAudio } from './utils/cutCalculator';
 import {
+  checkOfflineLicenseStatus,
+  recordSuccessfulFirebaseValidation,
+  getOfflineLockoutMessage,
+  setOfflineLockoutMessage,
+  clearOfflineLockoutMessage
+} from './utils/licenseSecurity';
+import {
   getTenantProjects,
   saveTenantProjects,
   getTenantOffcuts,
@@ -103,6 +110,51 @@ export default function App() {
 
   // Firebase Modal Visibility State
   const [isFirebaseModalOpen, setIsFirebaseModalOpen] = useState(false);
+
+  // Security & Offline License 24-Hour Expiration Check Effect
+  useEffect(() => {
+    const verifyOfflineLicense = () => {
+      const status = checkOfflineLicenseStatus();
+
+      // If user is logged in (not Super Admin) and offline limit of 24 hours exceeded
+      if (currentUser && currentUser.role !== 'superadmin' && status.isExpired) {
+        const lockoutReason = `SESIÓN CERRADA AUTOMÁTICAMENTE: La aplicación ha superado las 24 horas continuas sin conexión a internet desde la última validación exitosa con Firebase (${status.lastValidationFormatted}). Por favor conecte el dispositivo a internet para revalidar la licencia del taller.`;
+        setOfflineLockoutMessage(lockoutReason);
+        handleLogout();
+        return;
+      }
+
+      // If online and user is active, periodically keep Firebase validation fresh
+      if (typeof navigator !== 'undefined' && navigator.onLine && currentUser) {
+        // Auto-refresh validation if more than 30 minutes have passed since last record
+        const elapsed = Date.now() - status.lastValidationTimestamp;
+        if (elapsed > 30 * 60 * 1000) {
+          recordSuccessfulFirebaseValidation('periodic_online_heartbeat');
+        }
+      }
+    };
+
+    // Check immediately on mount and user change
+    verifyOfflineLicense();
+
+    // Check periodically every 20 seconds
+    const interval = setInterval(verifyOfflineLicense, 20000);
+
+    // Also check on network status and window focus events
+    const handleNetworkChange = () => verifyOfflineLicense();
+    window.addEventListener('online', handleNetworkChange);
+    window.addEventListener('offline', handleNetworkChange);
+    window.addEventListener('focus', handleNetworkChange);
+    window.addEventListener('carpinteria_firebase_validation_updated', handleNetworkChange);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('online', handleNetworkChange);
+      window.removeEventListener('offline', handleNetworkChange);
+      window.removeEventListener('focus', handleNetworkChange);
+      window.removeEventListener('carpinteria_firebase_validation_updated', handleNetworkChange);
+    };
+  }, [currentUser]);
 
   // Sync state to LocalStorage per Tenant
   useEffect(() => {

@@ -1,13 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User } from '../types';
 import { authenticateUserCredentials } from '../utils/tenants';
+import {
+  checkOfflineLicenseStatus,
+  getOfflineLockoutMessage,
+  clearOfflineLockoutMessage,
+  revalidateLicenseWithFirebase,
+  recordSuccessfulFirebaseValidation
+} from '../utils/licenseSecurity';
 import {
   Mail,
   Lock,
   LogIn,
   Eye,
   EyeOff,
-  AlertTriangle
+  AlertTriangle,
+  Wifi,
+  WifiOff,
+  RefreshCw,
+  CheckCircle,
+  Clock,
+  ShieldAlert
 } from 'lucide-react';
 
 interface LoginViewProps {
@@ -15,16 +28,56 @@ interface LoginViewProps {
   onOpenFirebaseModal?: () => void;
 }
 
-export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
+export const LoginView: React.FC<LoginViewProps> = ({ onLogin, onOpenFirebaseModal }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isRevalidating, setIsRevalidating] = useState(false);
+  const [revalidationNotice, setRevalidationNotice] = useState<string | null>(null);
+
+  const [offlineStatus, setOfflineStatus] = useState(() => checkOfflineLicenseStatus());
+  const [lockoutMsg, setLockoutMsg] = useState<string | null>(() => getOfflineLockoutMessage());
+
+  useEffect(() => {
+    const updateStatus = () => {
+      setOfflineStatus(checkOfflineLicenseStatus());
+      setLockoutMsg(getOfflineLockoutMessage());
+    };
+
+    window.addEventListener('online', updateStatus);
+    window.addEventListener('offline', updateStatus);
+    window.addEventListener('carpinteria_firebase_validation_updated', updateStatus);
+
+    return () => {
+      window.removeEventListener('online', updateStatus);
+      window.removeEventListener('offline', updateStatus);
+      window.removeEventListener('carpinteria_firebase_validation_updated', updateStatus);
+    };
+  }, []);
+
+  const handleRevalidateLicense = async () => {
+    setIsRevalidating(true);
+    setRevalidationNotice(null);
+    const result = await revalidateLicenseWithFirebase();
+    setIsRevalidating(false);
+
+    if (result.success) {
+      clearOfflineLockoutMessage();
+      setLockoutMsg(null);
+      setErrorMsg('');
+      setRevalidationNotice(result.message);
+      setOfflineStatus(checkOfflineLicenseStatus());
+    } else {
+      setErrorMsg(result.message);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
+    setRevalidationNotice(null);
 
     if (!email || !password) {
       setErrorMsg('Por favor ingrese su correo electrónico y contraseña.');
@@ -43,6 +96,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
       }
 
       if (authResult.user) {
+        clearOfflineLockoutMessage();
         onLogin(authResult.user);
       }
     }, 300);
@@ -63,11 +117,70 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
           <p className="text-base sm:text-lg font-bold text-amber-200">
             Ingreso y Aislamiento Seguro de Datos por Taller
           </p>
+
+          {/* Connection & 24h Offline Status Badge */}
+          <div className="mt-4 inline-flex items-center gap-2 bg-black/40 px-3.5 py-1.5 rounded-full border border-amber-500/40 text-xs font-bold">
+            {offlineStatus.isOnline ? (
+              <>
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span className="text-emerald-300">Dispositivo Online</span>
+              </>
+            ) : (
+              <>
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+                <span className="text-amber-300">Modo Offline (Taller)</span>
+              </>
+            )}
+            <span className="text-amber-400/60">•</span>
+            <span className="text-slate-300">Última validación: {offlineStatus.lastValidationFormatted}</span>
+          </div>
         </div>
 
         {/* Login Form */}
         <div className="p-6 sm:p-8 space-y-6">
           
+          {/* Critical 24h Offline Lockout Alert */}
+          {(lockoutMsg || (offlineStatus.isExpired && !offlineStatus.isOnline)) && (
+            <div className="bg-rose-50 border-4 border-rose-600 p-5 rounded-2xl text-rose-950 shadow-lg space-y-3">
+              <div className="flex items-start gap-3">
+                <ShieldAlert className="w-8 h-8 text-rose-600 shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="font-black text-lg text-rose-900 leading-tight">
+                    CADUCIDAD DE LICENCIA OFFLINE (LÍMITE 24 HORAS)
+                  </h4>
+                  <p className="text-sm font-bold text-rose-800 mt-1 leading-relaxed">
+                    {lockoutMsg || `Han transcurrido más de 24 horas continuas sin conexión a internet desde la última validación exitosa con Firebase (${offlineStatus.lastValidationFormatted}). Para reanudar el trabajo en el taller, conecte el dispositivo a internet para revalidar la licencia del taller.`}
+                  </p>
+                </div>
+              </div>
+
+              {/* Revalidation Action Button */}
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={handleRevalidateLicense}
+                  disabled={isRevalidating}
+                  className="w-full bg-rose-700 hover:bg-rose-800 text-white font-black py-3 px-4 rounded-xl border-2 border-rose-950 shadow flex items-center justify-center gap-2 text-base cursor-pointer disabled:opacity-50 transition"
+                >
+                  <RefreshCw className={`w-5 h-5 ${isRevalidating ? 'animate-spin' : ''}`} />
+                  {isRevalidating ? 'REVALIDANDO CONEXIÓN Y LICENCIA...' : 'REVALIDAR LICENCIA CON INTERNET'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Success Revalidation Notice */}
+          {revalidationNotice && (
+            <div className="bg-emerald-50 border-3 border-emerald-500 p-4 rounded-2xl text-emerald-950 text-sm font-bold flex items-start gap-3">
+              <CheckCircle className="w-6 h-6 text-emerald-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-black text-base text-emerald-900">¡Licencia Revalidada Exitosamente!</p>
+                <p className="text-emerald-800">{revalidationNotice}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Standard Form Error */}
           {errorMsg && (
             <div className="bg-rose-100 border-l-8 border-rose-600 p-4 rounded-2xl text-rose-900 text-base font-bold flex items-start gap-3">
               <AlertTriangle className="w-6 h-6 text-rose-600 shrink-0 mt-0.5" />
@@ -135,10 +248,21 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
             </button>
           </form>
 
-          {/* PWA & Security Notice */}
-          <div className="pt-2 flex items-center justify-center gap-2 text-xs font-bold text-slate-500">
-            <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span>Modo Offline PWA Activo • Datos del Taller Guardados Localmente</span>
+          {/* Offline Grace Info */}
+          <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs font-bold text-slate-500 border-t border-slate-200">
+            <div className="flex items-center gap-2">
+              <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span>Modo Offline PWA (24h de Gracia)</span>
+            </div>
+            {onOpenFirebaseModal && (
+              <button
+                type="button"
+                onClick={onOpenFirebaseModal}
+                className="text-amber-800 hover:text-amber-950 underline font-black cursor-pointer"
+              >
+                Ver Estado de Validación Firebase
+              </button>
+            )}
           </div>
 
         </div>
