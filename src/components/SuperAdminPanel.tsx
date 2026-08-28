@@ -267,7 +267,9 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
       setCredentialsModalTenant(created);
       setActiveTab('tenants');
     } catch (err: any) {
-      setFormErrorMessage('Error al crear el taller: ' + (err.message || String(err)));
+      const errorMsg = err?.message || String(err) || 'Error desconocido al guardar en Firestore';
+      setFormErrorMessage('Error al crear el taller: ' + errorMsg);
+      alert('Error al guardar el taller en Firestore: ' + errorMsg);
     } finally {
       setIsSubmitting(false);
     }

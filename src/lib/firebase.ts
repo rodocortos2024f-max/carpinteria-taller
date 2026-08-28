@@ -14,8 +14,9 @@ try {
     app = getApp();
   }
   auth = getAuth(app);
-  // Using default or custom database
-  db = getFirestore(app);
+  // Using custom or default database
+  const dbId = (config as any).firestoreDatabaseId;
+  db = dbId && dbId !== '(default)' ? getFirestore(app, dbId) : getFirestore(app);
 } catch (error) {
   console.error('Firebase initialization error:', error);
 }

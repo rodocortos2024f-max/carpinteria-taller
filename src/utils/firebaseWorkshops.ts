@@ -10,10 +10,13 @@ import {
   orderBy,
   Unsubscribe 
 } from 'firebase/firestore';
+import { initializeApp, deleteApp, FirebaseApp } from 'firebase/app';
 import { 
+  getAuth,
   createUserWithEmailAndPassword, 
-  signInWithEmailAndPassword 
+  signOut
 } from 'firebase/auth';
+import config from '../../firebase-applet-config.json';
 import { db, auth } from '../lib/firebase';
 import { WorkshopTenant } from '../types';
 import { recordSuccessfulFirebaseValidation } from './licenseSecurity';
@@ -34,23 +37,41 @@ export interface FirebaseSyncState {
 let activeSnapshotUnsubscribe: Unsubscribe | null = null;
 
 /**
- * Register user in Firebase Authentication safely
+ * Register user in Firebase Authentication safely using an isolated secondary App instance
+ * to avoid signing out or overriding the active Super Admin session.
  */
 export async function registerFirebaseUser(email: string, password?: string): Promise<{ success: boolean; uid?: string; error?: string }> {
+  let secondaryApp: FirebaseApp | null = null;
   try {
-    if (!auth) {
-      return { success: false, error: 'Firebase Auth no inicializado' };
-    }
+    const cleanEmail = email.trim().toLowerCase();
     const securePass = password && password.length >= 6 ? password : 'taller2026';
-    const userCredential = await createUserWithEmailAndPassword(auth, email.trim().toLowerCase(), securePass);
-    return { success: true, uid: userCredential.user.uid };
+    
+    // Create an isolated secondary app instance to preserve current super admin auth session
+    const secondaryAppName = `authWorker_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    secondaryApp = initializeApp(config, secondaryAppName);
+    const secondaryAuth = getAuth(secondaryApp);
+
+    const userCredential = await createUserWithEmailAndPassword(secondaryAuth, cleanEmail, securePass);
+    const uid = userCredential.user.uid;
+
+    try {
+      await signOut(secondaryAuth);
+    } catch (_) {}
+
+    return { success: true, uid };
   } catch (error: any) {
-    // If email already exists or in use, treat as success/existing
+    // If email already exists or in use, treat as success/existing without failing the workshop creation
     if (error?.code === 'auth/email-already-in-use') {
       return { success: true, error: 'Email ya registrado en Firebase Auth' };
     }
     console.warn('Firebase Auth user registration note:', error?.message || error);
     return { success: false, error: error?.message || 'Error al registrar en Auth' };
+  } finally {
+    if (secondaryApp) {
+      try {
+        await deleteApp(secondaryApp);
+      } catch (_) {}
+    }
   }
 }
 
@@ -59,12 +80,12 @@ export async function registerFirebaseUser(email: string, password?: string): Pr
  */
 export async function saveWorkshopToFirestore(tenant: WorkshopTenant): Promise<{ success: boolean; message: string }> {
   try {
-    // 1. Register Master Account in Firebase Auth
+    // 1. Register Master Account in Firebase Auth using isolated secondary instance
     if (tenant.masterAccount?.email) {
       await registerFirebaseUser(tenant.masterAccount.email, tenant.masterAccount.password);
     }
 
-    // 2. Register Operator Account in Firebase Auth (if present)
+    // 2. Register Operator Account in Firebase Auth (if present) using isolated secondary instance
     if (tenant.operatorAccount?.email) {
       await registerFirebaseUser(tenant.operatorAccount.email, tenant.operatorAccount.password);
     }
@@ -75,6 +96,8 @@ export async function saveWorkshopToFirestore(tenant: WorkshopTenant): Promise<{
       // Clean undefined values before writing to Firestore
       const cleanData = JSON.parse(JSON.stringify(tenant));
       await setDoc(docRef, cleanData, { merge: true });
+    } else {
+      throw new Error('No se pudo inicializar la conexión con Firestore.');
     }
 
     // 4. Update local cache & dispatch
@@ -87,12 +110,9 @@ export async function saveWorkshopToFirestore(tenant: WorkshopTenant): Promise<{
     };
   } catch (error: any) {
     console.error('Error saving workshop to Firestore:', error);
-    // Fallback to local cache so user experience is uninterrupted
+    // Keep local cache fallback
     updateLocalWorkshopCache(tenant);
-    return {
-      success: false,
-      message: error?.message || 'Error al persistir taller en Firestore'
-    };
+    throw error;
   }
 }
 
