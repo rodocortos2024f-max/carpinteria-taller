@@ -61,8 +61,9 @@ export async function registerFirebaseUser(email: string, password?: string): Pr
 
     return { success: true, uid };
   } catch (error: any) {
-    // If email already exists or in use, treat as success/existing without failing the workshop creation
-    if (error?.code === 'auth/email-already-in-use') {
+    // If email already exists in Auth, treat as success so Firestore record creation proceeds
+    if (error?.code === 'auth/email-already-in-use' || error?.message?.includes('email-already-in-use')) {
+      console.info(`Firebase Auth: el correo ${email} ya existe en Authentication. Continuando con guardado.`);
       return { success: true, error: 'Email ya registrado en Firebase Auth' };
     }
     console.warn('Firebase Auth user registration note:', error?.message || error);
@@ -92,15 +93,15 @@ export async function saveWorkshopToFirestore(tenant: WorkshopTenant): Promise<{
     }
 
     // 3. Persist Workshop Document directly in Firestore collection 'workshops'
-    if (db) {
-      const workshopsCollectionRef = collection(db, WORKSHOPS_COLLECTION);
-      const docRef = doc(workshopsCollectionRef, tenant.id);
-      // Clean undefined values before writing to Firestore
-      const cleanData = JSON.parse(JSON.stringify(tenant));
-      await setDoc(docRef, cleanData, { merge: true });
-    } else {
+    if (!db) {
       throw new Error('No se pudo inicializar la conexión con Firestore. Revisa la configuración de Firebase.');
     }
+
+    const workshopsCollectionRef = collection(db, WORKSHOPS_COLLECTION);
+    const docRef = doc(workshopsCollectionRef, tenant.id);
+    // Clean undefined values before writing to Firestore
+    const cleanData = JSON.parse(JSON.stringify(tenant));
+    await setDoc(docRef, cleanData, { merge: true });
 
     // 4. Update local cache & dispatch
     updateLocalWorkshopCache(tenant);

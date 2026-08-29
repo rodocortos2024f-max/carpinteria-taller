@@ -276,9 +276,9 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
         }
       } catch (_) {}
     } catch (err: any) {
-      const errorMsg = err?.message || String(err) || 'Error desconocido al guardar en Firestore';
-      setFormErrorMessage('Error al crear el taller en Firebase: ' + errorMsg);
-      alert('Error al guardar el taller en Firestore / Auth: ' + errorMsg);
+      const errorMsg = err?.message || String(err) || 'Error desconocido al procesar en Firebase';
+      setFormErrorMessage('Error de Firebase: ' + errorMsg);
+      alert('Error de Firebase: ' + errorMsg);
     } finally {
       setIsSubmitting(false);
     }
