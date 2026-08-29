@@ -82,17 +82,7 @@ export async function registerFirebaseUser(email: string, password?: string): Pr
  */
 export async function saveWorkshopToFirestore(tenant: WorkshopTenant): Promise<{ success: boolean; message: string }> {
   try {
-    // 1. Register Master Account in Firebase Auth using isolated secondary instance
-    if (tenant.masterAccount?.email) {
-      await registerFirebaseUser(tenant.masterAccount.email, tenant.masterAccount.password);
-    }
-
-    // 2. Register Operator Account in Firebase Auth (if present) using isolated secondary instance
-    if (tenant.operatorAccount?.email) {
-      await registerFirebaseUser(tenant.operatorAccount.email, tenant.operatorAccount.password);
-    }
-
-    // 3. Persist Workshop Document directly in Firestore collection 'workshops'
+    // 1. Persist Workshop Document directly in Firestore collection 'workshops' FIRST
     if (!db) {
       throw new Error('No se pudo inicializar la conexión con Firestore. Revisa la configuración de Firebase.');
     }
@@ -103,13 +93,25 @@ export async function saveWorkshopToFirestore(tenant: WorkshopTenant): Promise<{
     const cleanData = JSON.parse(JSON.stringify(tenant));
     await setDoc(docRef, cleanData, { merge: true });
 
-    // 4. Update local cache & dispatch
+    // 2. Secondary Auth registration: executed non-blockingly so Auth issues don't prevent Firestore doc saving
+    if (tenant.masterAccount?.email) {
+      registerFirebaseUser(tenant.masterAccount.email, tenant.masterAccount.password).catch(err => {
+        console.warn('Registro Auth Maestro no crítico:', err?.message || err);
+      });
+    }
+    if (tenant.operatorAccount?.email) {
+      registerFirebaseUser(tenant.operatorAccount.email, tenant.operatorAccount.password).catch(err => {
+        console.warn('Registro Auth Operario no crítico:', err?.message || err);
+      });
+    }
+
+    // 3. Update local cache & dispatch
     updateLocalWorkshopCache(tenant);
     recordSuccessfulFirebaseValidation('firestore_save_workshop');
 
     return {
       success: true,
-      message: `Taller "${tenant.name}" guardado exitosamente en Firestore y usuarios registrados en Firebase Auth.`
+      message: `Taller "${tenant.name}" guardado exitosamente en Firestore.`
     };
   } catch (error: any) {
     console.error('Error saving workshop to Firestore:', error);
