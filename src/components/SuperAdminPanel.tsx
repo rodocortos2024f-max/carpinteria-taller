@@ -266,10 +266,19 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
       // Open credentials modal for immediate copying
       setCredentialsModalTenant(created);
       setActiveTab('tenants');
+
+      // Refresh list immediately from Firestore
+      try {
+        const freshList = await fetchWorkshopsOnce();
+        if (freshList && freshList.length > 0) {
+          setTenants(freshList);
+          setStats(getGlobalPlatformStats());
+        }
+      } catch (_) {}
     } catch (err: any) {
       const errorMsg = err?.message || String(err) || 'Error desconocido al guardar en Firestore';
-      setFormErrorMessage('Error al crear el taller: ' + errorMsg);
-      alert('Error al guardar el taller en Firestore: ' + errorMsg);
+      setFormErrorMessage('Error al crear el taller en Firebase: ' + errorMsg);
+      alert('Error al guardar el taller en Firestore / Auth: ' + errorMsg);
     } finally {
       setIsSubmitting(false);
     }
@@ -277,28 +286,54 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
 
   // Toggle Status in Firestore
   const handleToggleStatus = async (tenantId: string) => {
-    await toggleTenantStatus(tenantId);
+    try {
+      await toggleTenantStatus(tenantId);
+      const fresh = await fetchWorkshopsOnce();
+      setTenants(fresh);
+      setStats(getGlobalPlatformStats());
+    } catch (e: any) {
+      alert('Error al cambiar el estado del taller en Firestore: ' + (e?.message || e));
+    }
   };
 
   // Delete Tenant from Firestore & local caches
   const handleDeleteTenant = async (tenant: WorkshopTenant) => {
     if (window.confirm(`¿Está seguro de eliminar definitivamente el taller "${tenant.name}" de Firebase Firestore y todos sus registros asociados?`)) {
-      await deleteTenant(tenant.id);
+      try {
+        await deleteTenant(tenant.id);
+        const fresh = await fetchWorkshopsOnce();
+        setTenants(fresh);
+        setStats(getGlobalPlatformStats());
+      } catch (e: any) {
+        alert('Error al eliminar el taller de Firestore: ' + (e?.message || e));
+      }
     }
   };
 
   // Delete Operator Account in Firestore
   const handleDeleteOperatorAccount = async (tenant: WorkshopTenant) => {
     if (window.confirm(`¿Desea eliminar la cuenta de Operario del taller "${tenant.name}" de Firestore?\n\nEl operario ya no podrá iniciar sesión. Podrá reactivarla o crearla nuevamente en cualquier momento con un solo clic.`)) {
-      await removeTenantOperatorAccount(tenant.id);
+      try {
+        await removeTenantOperatorAccount(tenant.id);
+        const fresh = await fetchWorkshopsOnce();
+        setTenants(fresh);
+      } catch (e: any) {
+        alert('Error al eliminar la cuenta de operario: ' + (e?.message || e));
+      }
     }
   };
 
   // Quick 1-Click Activate Operator Account in Firestore
   const handleQuickActivateOperator = async (tenant: WorkshopTenant) => {
-    const updated = await createOrActivateTenantOperator(tenant.id);
-    if (updated) {
-      setCredentialsModalTenant(updated);
+    try {
+      const updated = await createOrActivateTenantOperator(tenant.id);
+      if (updated) {
+        setCredentialsModalTenant(updated);
+        const fresh = await fetchWorkshopsOnce();
+        setTenants(fresh);
+      }
+    } catch (e: any) {
+      alert('Error al activar la cuenta de operario en Firestore: ' + (e?.message || e));
     }
   };
 

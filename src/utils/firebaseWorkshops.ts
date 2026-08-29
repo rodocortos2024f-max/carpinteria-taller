@@ -2,6 +2,7 @@ import {
   collection, 
   doc, 
   setDoc, 
+  addDoc,
   getDocs, 
   deleteDoc, 
   updateDoc, 
@@ -16,8 +17,7 @@ import {
   createUserWithEmailAndPassword, 
   signOut
 } from 'firebase/auth';
-import config from '../../firebase-applet-config.json';
-import { db, auth } from '../lib/firebase';
+import { db, auth, getFirebaseConfig } from '../lib/firebase';
 import { WorkshopTenant } from '../types';
 import { recordSuccessfulFirebaseValidation } from './licenseSecurity';
 
@@ -45,6 +45,7 @@ export async function registerFirebaseUser(email: string, password?: string): Pr
   try {
     const cleanEmail = email.trim().toLowerCase();
     const securePass = password && password.length >= 6 ? password : 'taller2026';
+    const config = getFirebaseConfig();
     
     // Create an isolated secondary app instance to preserve current super admin auth session
     const secondaryAppName = `authWorker_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
@@ -76,7 +77,7 @@ export async function registerFirebaseUser(email: string, password?: string): Pr
 }
 
 /**
- * Save / Create Workshop in Firestore and register its users in Firebase Auth
+ * Save / Create Workshop directly in Firestore collection('workshops') and register its users in Firebase Auth
  */
 export async function saveWorkshopToFirestore(tenant: WorkshopTenant): Promise<{ success: boolean; message: string }> {
   try {
@@ -90,14 +91,15 @@ export async function saveWorkshopToFirestore(tenant: WorkshopTenant): Promise<{
       await registerFirebaseUser(tenant.operatorAccount.email, tenant.operatorAccount.password);
     }
 
-    // 3. Persist Workshop Document in Firestore
+    // 3. Persist Workshop Document directly in Firestore collection 'workshops'
     if (db) {
-      const docRef = doc(db, WORKSHOPS_COLLECTION, tenant.id);
+      const workshopsCollectionRef = collection(db, WORKSHOPS_COLLECTION);
+      const docRef = doc(workshopsCollectionRef, tenant.id);
       // Clean undefined values before writing to Firestore
       const cleanData = JSON.parse(JSON.stringify(tenant));
       await setDoc(docRef, cleanData, { merge: true });
     } else {
-      throw new Error('No se pudo inicializar la conexión con Firestore.');
+      throw new Error('No se pudo inicializar la conexión con Firestore. Revisa la configuración de Firebase.');
     }
 
     // 4. Update local cache & dispatch
@@ -115,6 +117,7 @@ export async function saveWorkshopToFirestore(tenant: WorkshopTenant): Promise<{
     throw error;
   }
 }
+
 
 /**
  * Update Workshop in Firestore
