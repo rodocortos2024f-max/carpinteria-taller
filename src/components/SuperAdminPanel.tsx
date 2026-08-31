@@ -242,8 +242,8 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
       });
 
       setFormSuccessMessage(
-        `¡Taller "${created.name}" guardado en Firebase Firestore y activado exitosamente con licencia ${created.licensePlan.toUpperCase()}! ${
-          created.operatorAccount ? '(Con cuenta de Maestro y Operario en Firebase Auth)' : '(Cuenta única de Maestro - Operario desactivado)'
+        `¡Taller "${created.name}" guardado directamente en Firebase Firestore y activado con licencia ${created.licensePlan.toUpperCase()}! ${
+          created.operatorAccount ? '(Con cuenta de Maestro y Operario)' : '(Cuenta única de Maestro)'
         }`
       );
       

@@ -26,11 +26,26 @@ export interface WorkshopTenant {
   address?: string;
   licensePlan: TenantLicensePlan;
   status: TenantLicenseStatus;
+  estado?: 'activo' | 'suspendido' | 'vencido' | 'prueba' | string;
   licenseExpiry: string; // YYYY-MM-DD
   createdAt: string;
   lastAccess: string;
   masterAccount: WorkshopUserAccount;
   operatorAccount?: WorkshopUserAccount;
+  maestro?: {
+    id?: string;
+    name?: string;
+    email: string;
+    password?: string;
+    role: 'MAESTRO' | 'maestro' | string;
+  };
+  operario?: {
+    id?: string;
+    name?: string;
+    email: string;
+    password?: string;
+    role: 'OPERARIO' | 'operario' | string;
+  } | null;
   activeProjectsCount?: number;
   totalProjectsCount?: number;
   monthlyStats?: {

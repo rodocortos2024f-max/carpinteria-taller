@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { User } from '../types';
 import { authenticateUserCredentials } from '../utils/tenants';
+import { fetchWorkshopsOnce } from '../utils/firebaseWorkshops';
 import {
   checkOfflineLicenseStatus,
   getOfflineLockoutMessage,
@@ -73,7 +74,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
     setRevalidationNotice(null);
@@ -85,8 +86,15 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
 
     setIsLoading(true);
 
-    setTimeout(() => {
-      setIsLoading(false);
+    try {
+      // Sync fresh workshop documents directly from Firestore if device is online
+      const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
+      if (isOnline) {
+        try {
+          await fetchWorkshopsOnce();
+        } catch (_) {}
+      }
+
       const authResult = authenticateUserCredentials(email, password);
 
       if (!authResult.success) {
@@ -98,7 +106,11 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
         clearOfflineLockoutMessage();
         onLogin(authResult.user);
       }
-    }, 300);
+    } catch (err: any) {
+      setErrorMsg('Error al verificar credenciales con Firestore: ' + (err?.message || err));
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (

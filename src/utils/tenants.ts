@@ -151,6 +151,7 @@ export async function createNewTenant(data: {
     address: data.address?.trim() || '',
     licensePlan: data.licensePlan,
     status: 'activa',
+    estado: 'activo',
     licenseExpiry: data.licenseExpiry || '2027-12-31',
     createdAt: formattedDate,
     lastAccess: formattedTime,
@@ -159,6 +160,20 @@ export async function createNewTenant(data: {
     monthlyStats: [
       { month: currentMonthKey, projectsCount: 0, cutsCount: 0 }
     ],
+    maestro: {
+      id: `usr_${tenantId}_m`,
+      name: data.masterName.trim() || 'Maestro Encargado',
+      email: data.masterEmail.trim().toLowerCase(),
+      password: data.masterPassword || 'taller2026',
+      role: 'MAESTRO'
+    },
+    operario: operatorAccount ? {
+      id: operatorAccount.id,
+      name: operatorAccount.name,
+      email: operatorAccount.email,
+      password: operatorAccount.password,
+      role: 'OPERARIO'
+    } : null,
     masterAccount: {
       id: `usr_${tenantId}_m`,
       name: data.masterName.trim() || 'Maestro Encargado',
@@ -170,7 +185,7 @@ export async function createNewTenant(data: {
     customNotes: data.customNotes || ''
   };
 
-  // 1. Persist in Firestore & register in Firebase Auth
+  // 1. Persist directly in Firestore collection 'workshops'
   await saveWorkshopToFirestore(newTenant);
 
   // 2. Initialize isolated storage for projects & offcuts
@@ -537,23 +552,30 @@ export function authenticateUserCredentials(emailInput: string, passwordInput: s
   const tenants = getAllTenants();
 
   for (const tenant of tenants) {
-    // Check Master Account
-    if (tenant.masterAccount.email.toLowerCase() === cleanEmail) {
-      if (tenant.status === 'suspendida' || tenant.status === 'vencida') {
+    const isTenantActive = (tenant.estado ? tenant.estado === 'activo' : true) && tenant.status !== 'suspendida' && tenant.status !== 'vencida';
+    
+    // Check Master Account (maestro or masterAccount)
+    const masterEmail = tenant.maestro?.email || tenant.masterAccount?.email;
+    const masterPass = tenant.maestro?.password || tenant.masterAccount?.password;
+    const masterName = tenant.maestro?.name || tenant.masterAccount?.name || 'Maestro Encargado';
+    const masterId = tenant.maestro?.id || tenant.masterAccount?.id || `usr_${tenant.id}_m`;
+
+    if (masterEmail && masterEmail.toLowerCase() === cleanEmail) {
+      if (!isTenantActive) {
         return {
           success: false,
           isSuspended: true,
-          errorMessage: `La licencia del taller "${tenant.name}" se encuentra actualmente suspendida o vencida en Firestore. Por favor contacte al administrador de la plataforma para reactivar su servicio.`
+          errorMessage: `La licencia del taller "${tenant.name}" se encuentra actualmente suspendida o inactiva en Firestore. Por favor contacte al administrador de la plataforma para reactivar su servicio.`
         };
       }
 
-      if (!tenant.masterAccount.password || tenant.masterAccount.password === cleanPass || cleanPass === 'carpinteria2026' || cleanPass === 'taller2026') {
+      if (!masterPass || masterPass === cleanPass || cleanPass === 'carpinteria2026' || cleanPass === 'taller2026') {
         updateTenantAccessTime(tenant.id, cleanEmail);
 
         const user: User = {
-          id: tenant.masterAccount.id,
-          name: tenant.masterAccount.name,
-          email: tenant.masterAccount.email,
+          id: masterId,
+          name: masterName,
+          email: masterEmail,
           role: 'maestro',
           tenantId: tenant.id,
           tenantName: tenant.name,
@@ -564,23 +586,28 @@ export function authenticateUserCredentials(emailInput: string, passwordInput: s
       }
     }
 
-    // Check Operator Account (if assigned)
-    if (tenant.operatorAccount && tenant.operatorAccount.email.toLowerCase() === cleanEmail) {
-      if (tenant.status === 'suspendida' || tenant.status === 'vencida') {
+    // Check Operator Account (operario or operatorAccount)
+    const opEmail = tenant.operario?.email || tenant.operatorAccount?.email;
+    const opPass = tenant.operario?.password || tenant.operatorAccount?.password;
+    const opName = tenant.operario?.name || tenant.operatorAccount?.name || 'Operario de Taller';
+    const opId = tenant.operario?.id || tenant.operatorAccount?.id || `usr_${tenant.id}_op`;
+
+    if (opEmail && opEmail.toLowerCase() === cleanEmail) {
+      if (!isTenantActive) {
         return {
           success: false,
           isSuspended: true,
-          errorMessage: `La licencia del taller "${tenant.name}" se encuentra actualmente suspendida en Firestore. Por favor contacte al maestro de su taller.`
+          errorMessage: `La licencia del taller "${tenant.name}" se encuentra actualmente suspendida o inactiva en Firestore. Por favor contacte al maestro de su taller.`
         };
       }
 
-      if (!tenant.operatorAccount.password || tenant.operatorAccount.password === cleanPass || cleanPass === 'chalan2026' || cleanPass === 'carpinteria2026') {
+      if (!opPass || opPass === cleanPass || cleanPass === 'chalan2026' || cleanPass === 'carpinteria2026') {
         updateTenantAccessTime(tenant.id, cleanEmail);
 
         const user: User = {
-          id: tenant.operatorAccount.id,
-          name: tenant.operatorAccount.name,
-          email: tenant.operatorAccount.email,
+          id: opId,
+          name: opName,
+          email: opEmail,
           role: 'operario',
           tenantId: tenant.id,
           tenantName: tenant.name,

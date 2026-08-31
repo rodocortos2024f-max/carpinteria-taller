@@ -2,7 +2,6 @@ import {
   collection, 
   doc, 
   setDoc, 
-  addDoc,
   getDocs, 
   deleteDoc, 
   updateDoc, 
@@ -11,13 +10,7 @@ import {
   orderBy,
   Unsubscribe 
 } from 'firebase/firestore';
-import { initializeApp, deleteApp, FirebaseApp } from 'firebase/app';
-import { 
-  getAuth,
-  createUserWithEmailAndPassword, 
-  signOut
-} from 'firebase/auth';
-import { db, auth, getFirebaseConfig } from '../lib/firebase';
+import { db } from '../lib/firebase';
 import { WorkshopTenant } from '../types';
 import { recordSuccessfulFirebaseValidation } from './licenseSecurity';
 
@@ -37,81 +30,70 @@ export interface FirebaseSyncState {
 let activeSnapshotUnsubscribe: Unsubscribe | null = null;
 
 /**
- * Register user in Firebase Authentication safely using an isolated secondary App instance
- * to avoid signing out or overriding the active Super Admin session.
- */
-export async function registerFirebaseUser(email: string, password?: string): Promise<{ success: boolean; uid?: string; error?: string }> {
-  let secondaryApp: FirebaseApp | null = null;
-  try {
-    const cleanEmail = email.trim().toLowerCase();
-    const securePass = password && password.length >= 6 ? password : 'taller2026';
-    const config = getFirebaseConfig();
-    
-    // Create an isolated secondary app instance to preserve current super admin auth session
-    const secondaryAppName = `authWorker_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    secondaryApp = initializeApp(config, secondaryAppName);
-    const secondaryAuth = getAuth(secondaryApp);
-
-    const userCredential = await createUserWithEmailAndPassword(secondaryAuth, cleanEmail, securePass);
-    const uid = userCredential.user.uid;
-
-    try {
-      await signOut(secondaryAuth);
-    } catch (_) {}
-
-    return { success: true, uid };
-  } catch (error: any) {
-    // If email already exists in Auth, treat as success so Firestore record creation proceeds
-    if (error?.code === 'auth/email-already-in-use' || error?.message?.includes('email-already-in-use')) {
-      console.info(`Firebase Auth: el correo ${email} ya existe en Authentication. Continuando con guardado.`);
-      return { success: true, error: 'Email ya registrado en Firebase Auth' };
-    }
-    console.warn('Firebase Auth user registration note:', error?.message || error);
-    return { success: false, error: error?.message || 'Error al registrar en Auth' };
-  } finally {
-    if (secondaryApp) {
-      try {
-        await deleteApp(secondaryApp);
-      } catch (_) {}
-    }
-  }
-}
-
-/**
- * Save / Create Workshop directly in Firestore collection('workshops') and register its users in Firebase Auth
+ * Save / Create Workshop directly in Firestore collection('workshops') with zero Firebase Auth dependencies.
+ * Stores a unified document with workshop details, maestro { email, password, role: 'MAESTRO' },
+ * operario { email, password, role: 'OPERARIO' }, and estado: 'activo'.
  */
 export async function saveWorkshopToFirestore(tenant: WorkshopTenant): Promise<{ success: boolean; message: string }> {
   try {
-    // 1. Persist Workshop Document directly in Firestore collection 'workshops' FIRST
     if (!db) {
       throw new Error('No se pudo inicializar la conexión con Firestore. Revisa la configuración de Firebase.');
     }
 
     const workshopsCollectionRef = collection(db, WORKSHOPS_COLLECTION);
     const docRef = doc(workshopsCollectionRef, tenant.id);
+
+    // Format consistent document for Option A (Direct Firestore)
+    const estado = tenant.estado || (tenant.status === 'suspendida' ? 'suspendido' : tenant.status === 'vencida' ? 'vencido' : 'activo');
+    const maestroObj = {
+      id: tenant.masterAccount?.id || `usr_${tenant.id}_m`,
+      name: tenant.masterAccount?.name || tenant.ownerName || 'Maestro Encargado',
+      email: tenant.masterAccount?.email?.trim().toLowerCase(),
+      password: tenant.masterAccount?.password || 'taller2026',
+      role: 'MAESTRO' as const
+    };
+
+    const operarioObj = tenant.operatorAccount ? {
+      id: tenant.operatorAccount.id || `usr_${tenant.id}_op`,
+      name: tenant.operatorAccount.name || 'Operario de Taller',
+      email: tenant.operatorAccount.email?.trim().toLowerCase(),
+      password: tenant.operatorAccount.password || 'chalan2026',
+      role: 'OPERARIO' as const
+    } : null;
+
+    const firestoreDocumentData: WorkshopTenant = {
+      ...tenant,
+      estado,
+      status: tenant.status || 'activa',
+      maestro: maestroObj,
+      operario: operarioObj,
+      masterAccount: {
+        id: maestroObj.id,
+        name: maestroObj.name,
+        email: maestroObj.email,
+        password: maestroObj.password,
+        role: 'maestro'
+      },
+      operatorAccount: operarioObj ? {
+        id: operarioObj.id,
+        name: operarioObj.name,
+        email: operarioObj.email,
+        password: operarioObj.password,
+        role: 'operario'
+      } : undefined
+    };
+
     // Clean undefined values before writing to Firestore
-    const cleanData = JSON.parse(JSON.stringify(tenant));
+    const cleanData = JSON.parse(JSON.stringify(firestoreDocumentData));
     await setDoc(docRef, cleanData, { merge: true });
 
-    // 2. Secondary Auth registration: executed non-blockingly so Auth issues don't prevent Firestore doc saving
-    if (tenant.masterAccount?.email) {
-      registerFirebaseUser(tenant.masterAccount.email, tenant.masterAccount.password).catch(err => {
-        console.warn('Registro Auth Maestro no crítico:', err?.message || err);
-      });
-    }
-    if (tenant.operatorAccount?.email) {
-      registerFirebaseUser(tenant.operatorAccount.email, tenant.operatorAccount.password).catch(err => {
-        console.warn('Registro Auth Operario no crítico:', err?.message || err);
-      });
-    }
-
-    // 3. Update local cache & dispatch
-    updateLocalWorkshopCache(tenant);
-    recordSuccessfulFirebaseValidation('firestore_save_workshop');
+    // Update local cache & dispatch
+    updateLocalWorkshopCache(firestoreDocumentData);
+    recordSuccessfulFirebaseValidation('firestore_save_workshop_direct');
 
     return {
       success: true,
-      message: `Taller "${tenant.name}" guardado exitosamente en Firestore.`
+      message: `Taller "${tenant.name}" guardado directamente en Firestore con éxito.`
     };
   } catch (error: any) {
     console.error('Error saving workshop to Firestore:', error);
@@ -121,15 +103,42 @@ export async function saveWorkshopToFirestore(tenant: WorkshopTenant): Promise<{
   }
 }
 
-
 /**
  * Update Workshop in Firestore
  */
 export async function updateWorkshopInFirestore(tenantId: string, updates: Partial<WorkshopTenant>): Promise<{ success: boolean }> {
   try {
+    // Keep estado and status synchronized
+    const normalizedUpdates: any = { ...updates };
+    if (updates.status) {
+      normalizedUpdates.estado = updates.status === 'suspendida' ? 'suspendido' : updates.status === 'vencida' ? 'vencido' : 'activo';
+    } else if (updates.estado) {
+      normalizedUpdates.status = updates.estado === 'suspendido' ? 'suspendida' : updates.estado === 'vencido' ? 'vencida' : 'activa';
+    }
+
+    if (updates.masterAccount) {
+      normalizedUpdates.maestro = {
+        id: updates.masterAccount.id,
+        name: updates.masterAccount.name,
+        email: updates.masterAccount.email?.trim().toLowerCase(),
+        password: updates.masterAccount.password,
+        role: 'MAESTRO'
+      };
+    }
+
+    if (updates.operatorAccount !== undefined) {
+      normalizedUpdates.operario = updates.operatorAccount ? {
+        id: updates.operatorAccount.id,
+        name: updates.operatorAccount.name,
+        email: updates.operatorAccount.email?.trim().toLowerCase(),
+        password: updates.operatorAccount.password,
+        role: 'OPERARIO'
+      } : null;
+    }
+
     if (db) {
       const docRef = doc(db, WORKSHOPS_COLLECTION, tenantId);
-      const cleanUpdates = JSON.parse(JSON.stringify(updates));
+      const cleanUpdates = JSON.parse(JSON.stringify(normalizedUpdates));
       await updateDoc(docRef, cleanUpdates);
     }
 
@@ -137,7 +146,7 @@ export async function updateWorkshopInFirestore(tenantId: string, updates: Parti
     const current = getWorkshopsFromLocalCache();
     const idx = current.findIndex(w => w.id === tenantId);
     if (idx >= 0) {
-      current[idx] = { ...current[idx], ...updates };
+      current[idx] = { ...current[idx], ...normalizedUpdates };
       saveWorkshopsToLocalCache(current);
     }
 
