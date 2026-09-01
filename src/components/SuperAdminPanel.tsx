@@ -213,6 +213,7 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
    */
   const handleCreateWorkshop = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log("Iniciando guardado en Firestore...");
 
     if (!nombreTaller.trim() || !duenoNombre.trim() || !telefono.trim() || !ciudad.trim()) {
       alert('Por favor complete todos los datos obligatorios del taller.');
@@ -297,7 +298,7 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
 
       const docRef = await addDoc(collection(db, 'workshops'), newDocData);
 
-      // Normalization for modal and immediate display
+      // Normalization for credentials modal
       const normalizedCreated = normalizeWorkshopDoc(docRef.id, newDocData);
       setCredentialsModalTenant(normalizedCreated);
 
@@ -319,11 +320,11 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
       setPlan('anual');
       setVencimiento(calculateExpiryDate('anual'));
 
-      alert('¡Taller guardado con éxito en Firestore! ID: ' + docRef.id);
+      alert('¡Taller guardado exitosamente en Firestore!');
       setActiveTab('tenants');
-    } catch (err: any) {
-      console.error('Error al crear taller en Firestore:', err);
-      alert('Error al guardar en Firestore: ' + (err?.message || err));
+    } catch (error: any) {
+      console.error(error);
+      alert('Error de Firebase: ' + (error?.message || error));
     } finally {
       setLoading(false);
     }
