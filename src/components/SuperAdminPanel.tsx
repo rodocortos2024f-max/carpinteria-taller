@@ -5,7 +5,6 @@ import {
   collection,
   addDoc,
   doc,
-  getDocs,
   updateDoc,
   deleteDoc,
   onSnapshot,
@@ -30,7 +29,6 @@ import {
   Users,
   PlusCircle,
   BarChart3,
-  Calendar,
   Activity,
   CheckCircle2,
   AlertTriangle,
@@ -42,15 +40,8 @@ import {
   Copy,
   Check,
   RefreshCw,
-  Sliders,
   LogOut,
-  ExternalLink,
-  ChevronRight,
   TrendingUp,
-  Scissors,
-  Hammer,
-  DollarSign,
-  UserCheck,
   Sparkles,
   Eye,
   EyeOff,
@@ -169,7 +160,6 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
         const list: WorkshopTenant[] = [];
         snapshot.forEach((docSnap) => {
           const item = normalizeWorkshopDoc(docSnap.id, docSnap.data());
-          // Filter legacy mock names if present
           if (item.id !== 'taller_don_jose' && item.id !== 'taller_los_cedros' && item.id !== 'taller_cocinas_vanguardia') {
             list.push(item);
           }
@@ -209,7 +199,7 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
 
   /**
    * Direct Firestore Creation with strict Try / Catch / Finally.
-   * Completely independent of Firebase Auth.
+   * Completely independent of Firebase Auth and local servers.
    */
   const handleCreateWorkshop = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -252,7 +242,7 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
         role: 'OPERARIO' as const
       } : null;
 
-      const newDocData = {
+      const newWorkshopData = {
         nombreTaller: nombreTaller.trim(),
         name: nombreTaller.trim(),
         duenoNombre: duenoNombre.trim(),
@@ -293,16 +283,16 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
       };
 
       if (!db) {
-        throw new Error('No se pudo conectar con Firestore. Verifique su conexión de red.');
+        throw new Error('No se pudo inicializar la conexión con Firestore. Verifique la configuración de Firebase.');
       }
 
-      const docRef = await addDoc(collection(db, 'workshops'), newDocData);
+      const docRef = await addDoc(collection(db, 'workshops'), newWorkshopData);
 
       // Normalization for credentials modal
-      const normalizedCreated = normalizeWorkshopDoc(docRef.id, newDocData);
+      const normalizedCreated = normalizeWorkshopDoc(docRef.id, newWorkshopData);
       setCredentialsModalTenant(normalizedCreated);
 
-      // Reset Form State
+      // Reset Form Fields
       setNombreTaller('');
       setDuenoNombre('');
       setCiudad('');
@@ -320,11 +310,11 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
       setPlan('anual');
       setVencimiento(calculateExpiryDate('anual'));
 
-      alert('¡Taller guardado exitosamente en Firestore!');
+      alert('¡Taller guardado exitosamente!');
       setActiveTab('tenants');
-    } catch (error: any) {
-      console.error(error);
-      alert('Error de Firebase: ' + (error?.message || error));
+    } catch (err: any) {
+      console.error("Error al guardar en Firestore:", err);
+      alert('Error: ' + (err?.message || err));
     } finally {
       setLoading(false);
     }
@@ -1031,28 +1021,32 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
 
             <form onSubmit={handleCreateWorkshop} className="space-y-8">
               
-              {/* Sección 1: Datos del Taller / Empresa */}
+              {/* Sección 1: Datos Generales del Taller */}
               <div className="space-y-4">
-                <h4 className="text-lg font-black text-amber-400 uppercase tracking-wider flex items-center gap-2">
-                  <Building2 className="w-5 h-5" />
-                  1. Datos del Taller / Empresa
+                <h4 className="text-lg font-black text-amber-400 flex items-center gap-2 border-b border-slate-800 pb-2">
+                  <Building2 className="w-5 h-5 text-amber-400" />
+                  1. Datos del Taller o Carpintería
                 </h4>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-bold text-slate-300 mb-1">Nombre del Taller *</label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-black uppercase text-slate-300">
+                      Nombre del Taller / Empresa *
+                    </label>
                     <input
                       type="text"
                       required
                       value={nombreTaller}
                       onChange={(e) => handleWorkshopNameChange(e.target.value)}
-                      placeholder="Ej. Carpintería San Mateo"
-                      className="w-full bg-slate-900 border-2 border-slate-700 text-white rounded-xl p-3.5 font-bold focus:border-amber-400 focus:outline-none"
+                      placeholder="Ej. Carpintería Don José"
+                      className="w-full bg-slate-900 border-2 border-slate-700 text-white rounded-xl px-4 py-3 font-bold focus:border-amber-400 focus:outline-none"
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-bold text-slate-300 mb-1">Nombre del Dueño / Maestro *</label>
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-black uppercase text-slate-300">
+                      Nombre del Dueño / Maestro Principal *
+                    </label>
                     <input
                       type="text"
                       required
@@ -1061,228 +1055,275 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
                         setDuenoNombre(e.target.value);
                         if (!maestroNombre) setMaestroNombre(e.target.value);
                       }}
-                      placeholder="Ej. Mateo Gómez"
-                      className="w-full bg-slate-900 border-2 border-slate-700 text-white rounded-xl p-3.5 font-bold focus:border-amber-400 focus:outline-none"
+                      placeholder="Ej. José Guadalupe Pérez"
+                      className="w-full bg-slate-900 border-2 border-slate-700 text-white rounded-xl px-4 py-3 font-bold focus:border-amber-400 focus:outline-none"
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-bold text-slate-300 mb-1">Ciudad / Estado *</label>
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-black uppercase text-slate-300">
+                      Ciudad / Estado *
+                    </label>
                     <input
                       type="text"
                       required
                       value={ciudad}
                       onChange={(e) => setCiudad(e.target.value)}
-                      placeholder="Ej. Puebla, Pue."
-                      className="w-full bg-slate-900 border-2 border-slate-700 text-white rounded-xl p-3.5 font-bold focus:border-amber-400 focus:outline-none"
+                      placeholder="Ej. Guadalajara, Jalisco"
+                      className="w-full bg-slate-900 border-2 border-slate-700 text-white rounded-xl px-4 py-3 font-bold focus:border-amber-400 focus:outline-none"
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-bold text-slate-300 mb-1">Teléfono de Contacto *</label>
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-black uppercase text-slate-300">
+                      Teléfono / WhatsApp *
+                    </label>
                     <input
-                      type="text"
+                      type="tel"
                       required
                       value={telefono}
                       onChange={(e) => setTelefono(e.target.value)}
-                      placeholder="Ej. +52 222 123 4567"
-                      className="w-full bg-slate-900 border-2 border-slate-700 text-white rounded-xl p-3.5 font-bold focus:border-amber-400 focus:outline-none"
+                      placeholder="Ej. 33 1234 5678"
+                      className="w-full bg-slate-900 border-2 border-slate-700 text-white rounded-xl px-4 py-3 font-bold focus:border-amber-400 focus:outline-none"
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-bold text-slate-300 mb-1">RFC / Identificación Fiscal</label>
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-black uppercase text-slate-300">
+                      RFC / Identificación Fiscal (Opcional)
+                    </label>
                     <input
                       type="text"
                       value={taxId}
                       onChange={(e) => setTaxId(e.target.value)}
-                      placeholder="Ej. GOMA850212ABC"
-                      className="w-full bg-slate-900 border-2 border-slate-700 text-white rounded-xl p-3.5 font-bold focus:border-amber-400 focus:outline-none"
+                      placeholder="Ej. PEGJ800101XYZ"
+                      className="w-full bg-slate-900 border-2 border-slate-700 text-white rounded-xl px-4 py-3 font-bold focus:border-amber-400 focus:outline-none"
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-bold text-slate-300 mb-1">Dirección del Taller</label>
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-black uppercase text-slate-300">
+                      Dirección Física del Taller (Opcional)
+                    </label>
                     <input
                       type="text"
                       value={address}
                       onChange={(e) => setAddress(e.target.value)}
-                      placeholder="Ej. Av. Carpinteros 104"
-                      className="w-full bg-slate-900 border-2 border-slate-700 text-white rounded-xl p-3.5 font-bold focus:border-amber-400 focus:outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-bold text-slate-300 mb-1">Plan de Licencia</label>
-                    <select
-                      value={plan}
-                      onChange={(e: any) => handlePlanChange(e.target.value)}
-                      className="w-full bg-slate-900 border-2 border-slate-700 text-white rounded-xl p-3.5 font-bold focus:border-amber-400 focus:outline-none cursor-pointer"
-                    >
-                      <option value="anual">Plan Anual (1 Año - Auto)</option>
-                      <option value="mensual">Plan Mensual (1 Mes - Auto)</option>
-                      <option value="vitalicia">Plan Vitalicio Pro (10 Años)</option>
-                      <option value="demo">Prueba Gratuita (14 Días)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="block text-sm font-bold text-slate-300">Fecha de Vencimiento</label>
-                      <span className="text-xs font-semibold text-amber-400">Calculada automática (editable)</span>
-                    </div>
-                    <input
-                      type="date"
-                      value={vencimiento}
-                      onChange={(e) => setVencimiento(e.target.value)}
-                      className="w-full bg-slate-900 border-2 border-slate-700 text-white rounded-xl p-3.5 font-bold focus:border-amber-400 focus:outline-none"
+                      placeholder="Ej. Av. Hidalgo 450, Col. Centro"
+                      className="w-full bg-slate-900 border-2 border-slate-700 text-white rounded-xl px-4 py-3 font-bold focus:border-amber-400 focus:outline-none"
                     />
                   </div>
                 </div>
               </div>
 
-              {/* Sección 2: Cuenta del Maestro (Acceso Completo Módulos 1, 2, 3, 4) */}
-              <div className="bg-slate-900 p-6 rounded-2xl border-2 border-amber-500/40 space-y-4">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-base font-black text-amber-300 uppercase tracking-wider flex items-center gap-2">
+              {/* Sección 2: Plan de Licencia y Vencimiento */}
+              <div className="space-y-4">
+                <h4 className="text-lg font-black text-amber-400 flex items-center gap-2 border-b border-slate-800 pb-2">
+                  <ShieldCheck className="w-5 h-5 text-amber-400" />
+                  2. Plan de Licencia y Vigencia
+                </h4>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-black uppercase text-slate-300">
+                      Tipo de Licencia *
+                    </label>
+                    <select
+                      value={plan}
+                      onChange={(e: any) => handlePlanChange(e.target.value)}
+                      className="w-full bg-slate-900 border-2 border-slate-700 text-white rounded-xl px-4 py-3 font-bold focus:border-amber-400 focus:outline-none cursor-pointer"
+                    >
+                      <option value="anual">Licencia Anual (1 Año)</option>
+                      <option value="mensual">Licencia Mensual (30 Días)</option>
+                      <option value="vitalicia">Licencia Vitalicia / Ilimitada</option>
+                      <option value="demo">Licencia Demo de Prueba (14 Días)</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-black uppercase text-slate-300">
+                      Fecha de Vencimiento *
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={vencimiento}
+                      onChange={(e) => setVencimiento(e.target.value)}
+                      className="w-full bg-slate-900 border-2 border-slate-700 text-white rounded-xl px-4 py-3 font-bold focus:border-amber-400 focus:outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Sección 3: Cuenta de Acceso para el Maestro */}
+              <div className="bg-slate-900 p-6 rounded-2xl border-2 border-amber-500/30 space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                  <h4 className="text-base font-black text-amber-300 flex items-center gap-2">
                     <span>🪚</span>
-                    2. Cuenta del Maestro (Acceso Completo a Módulos 1, 2, 3 y 4)
+                    3. Cuenta Principal del Maestro Encargado
                   </h4>
-                  <span className="text-xs font-black bg-amber-400 text-slate-950 px-2.5 py-1 rounded-full">
-                    Con Costos y Cotizaciones
+                  <span className="text-xs bg-amber-400/20 text-amber-300 font-bold px-2.5 py-0.5 rounded-full">
+                    ACCESO COMPLETO (M1, M2, M3, M4)
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">Nombre Completo</label>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-black uppercase text-slate-300">
+                      Nombre del Maestro
+                    </label>
                     <input
                       type="text"
                       value={maestroNombre}
                       onChange={(e) => setMaestroNombre(e.target.value)}
-                      placeholder="Maestro Mateo"
-                      className="w-full bg-slate-950 border border-slate-700 text-white rounded-xl p-3 font-bold focus:border-amber-400 focus:outline-none text-sm"
+                      placeholder="Ej. Maestro José"
+                      className="w-full bg-slate-950 border border-slate-700 text-white rounded-xl px-4 py-2.5 font-bold focus:border-amber-400 focus:outline-none text-sm"
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">Correo de Ingreso (Login) *</label>
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-black uppercase text-slate-300">
+                      Correo Electrónico (Login) *
+                    </label>
                     <input
                       type="email"
                       required
                       value={maestroEmail}
                       onChange={(e) => setMaestroEmail(e.target.value)}
                       placeholder="maestro@taller.com"
-                      className="w-full bg-slate-950 border border-slate-700 text-white rounded-xl p-3 font-bold focus:border-amber-400 focus:outline-none text-sm"
+                      className="w-full bg-slate-950 border border-slate-700 text-white rounded-xl px-4 py-2.5 font-bold focus:border-amber-400 focus:outline-none text-sm font-mono"
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">Contraseña de Acceso</label>
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-black uppercase text-slate-300">
+                      Contraseña Asignada *
+                    </label>
                     <input
                       type="text"
+                      required
                       value={maestroPassword}
                       onChange={(e) => setMaestroPassword(e.target.value)}
                       placeholder="taller2026"
-                      className="w-full bg-slate-950 border border-slate-700 text-amber-300 rounded-xl p-3 font-mono font-bold focus:border-amber-400 focus:outline-none text-sm"
+                      className="w-full bg-slate-950 border border-slate-700 text-amber-300 rounded-xl px-4 py-2.5 font-bold focus:border-amber-400 focus:outline-none text-sm font-mono"
                     />
                   </div>
                 </div>
               </div>
 
-              {/* Sección 3: Cuenta Secundaria del Operario / Chalán (Opcional) */}
-              <div className={`p-6 rounded-2xl border-2 transition-all space-y-4 ${
-                hasOperario ? 'bg-slate-900 border-orange-500/50' : 'bg-slate-900/50 border-slate-800'
-              }`}>
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              {/* Sección 4: Cuenta Opcional para el Operario / Chalán */}
+              <div className="bg-slate-900 p-6 rounded-2xl border-2 border-orange-500/30 space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                   <div className="flex items-center gap-3">
                     <input
                       type="checkbox"
-                      id="toggleOperatorCreation"
+                      id="enableOperator"
                       checked={hasOperario}
                       onChange={(e) => setHasOperario(e.target.checked)}
                       className="w-5 h-5 accent-orange-500 rounded cursor-pointer"
                     />
-                    <label htmlFor="toggleOperatorCreation" className="cursor-pointer">
-                      <h4 className="text-base font-black text-orange-300 uppercase tracking-wider flex items-center gap-2">
-                        <span>🔨</span>
-                        3. Cuenta de Operario / Chalán (Opcional)
-                      </h4>
-                      <p className="text-xs text-slate-400 font-medium">
-                        {hasOperario
-                          ? 'Acceso restringido a Sierra (M2) y Armado (M3) sin precios ni cotizaciones'
-                          : 'Desactivada: el taller operará solo con cuenta de Maestro (se puede activar después)'}
-                      </p>
+                    <label htmlFor="enableOperator" className="text-base font-black text-orange-400 flex items-center gap-2 cursor-pointer">
+                      <span>🔨</span>
+                      4. Activar Cuenta de Operario / Chalán (Opcional)
                     </label>
                   </div>
-
-                  <button
-                    type="button"
-                    onClick={() => setHasOperario(prev => !prev)}
-                    className={`text-xs font-black px-3.5 py-1.5 rounded-full border transition cursor-pointer ${
-                      hasOperario
-                        ? 'bg-orange-500 text-slate-950 border-orange-300 shadow'
-                        : 'bg-slate-800 text-slate-400 border-slate-700'
-                    }`}
-                  >
-                    {hasOperario ? '✓ CUENTA ACTIVADA' : '+ NO CREAR CUENTA OPERARIO'}
-                  </button>
+                  <span className="text-xs bg-orange-400/20 text-orange-300 font-bold px-2.5 py-0.5 rounded-full">
+                    SOLO CORTE & SOBRANTES (SIN PRECIOS)
+                  </span>
                 </div>
 
                 {hasOperario ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-3 border-t border-slate-800">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-300 mb-1">Nombre del Operario</label>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-black uppercase text-slate-300">
+                        Nombre del Operario
+                      </label>
                       <input
                         type="text"
                         value={operarioNombre}
                         onChange={(e) => setOperarioNombre(e.target.value)}
-                        placeholder="Chalán Beto"
-                        className="w-full bg-slate-950 border border-slate-700 text-white rounded-xl p-3 font-bold focus:border-orange-400 focus:outline-none text-sm"
+                        placeholder="Ej. Luis Hernández"
+                        className="w-full bg-slate-950 border border-slate-700 text-white rounded-xl px-4 py-2.5 font-bold focus:border-orange-400 focus:outline-none text-sm"
                       />
                     </div>
 
-                    <div>
-                      <label className="block text-xs font-bold text-slate-300 mb-1">Correo de Ingreso (Login) *</label>
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-black uppercase text-slate-300">
+                        Correo de Acceso (Login) *
+                      </label>
                       <input
                         type="email"
                         required={hasOperario}
                         value={operarioEmail}
                         onChange={(e) => setOperarioEmail(e.target.value)}
                         placeholder="operario@taller.com"
-                        className="w-full bg-slate-950 border border-slate-700 text-white rounded-xl p-3 font-bold focus:border-orange-400 focus:outline-none text-sm"
+                        className="w-full bg-slate-950 border border-slate-700 text-white rounded-xl px-4 py-2.5 font-bold focus:border-orange-400 focus:outline-none text-sm font-mono"
                       />
                     </div>
 
-                    <div>
-                      <label className="block text-xs font-bold text-slate-300 mb-1">Contraseña de Acceso</label>
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-black uppercase text-slate-300">
+                        Contraseña Asignada *
+                      </label>
                       <input
                         type="text"
+                        required={hasOperario}
                         value={operarioPassword}
                         onChange={(e) => setOperarioPassword(e.target.value)}
                         placeholder="chalan2026"
-                        className="w-full bg-slate-950 border border-slate-700 text-orange-300 rounded-xl p-3 font-mono font-bold focus:border-orange-400 focus:outline-none text-sm"
+                        className="w-full bg-slate-950 border border-slate-700 text-orange-300 rounded-xl px-4 py-2.5 font-bold focus:border-orange-400 focus:outline-none text-sm font-mono"
                       />
                     </div>
                   </div>
                 ) : (
-                  <div className="bg-slate-950/60 p-4 rounded-xl border border-slate-800 text-xs text-slate-400 flex items-center gap-3">
-                    <span className="text-xl">ℹ️</span>
-                    <span>
-                      <strong>Cuenta no obligatoria:</strong> Si este taller no cuenta con chalán o no requiere acceso secundario, se creará únicamente la cuenta del Maestro. Podrás crear o activar al operario en cualquier momento con 1 solo clic.
-                    </span>
-                  </div>
+                  <p className="text-xs text-slate-400 font-medium">
+                    Marcando la casilla puedes crear una cuenta restringida para el chalán u operario de corte. Si no la activas, el taller funcionará únicamente con la cuenta del Maestro.
+                  </p>
                 )}
               </div>
 
-              {/* Botón de Guardar */}
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-black text-2xl py-5 rounded-2xl shadow-2xl border-2 border-amber-300 uppercase tracking-wide transition cursor-pointer"
-              >
-                {loading ? 'Guardando...' : 'Guardar Taller'}
-              </button>
+              {/* Sección 5: Notas Administrativas */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-black uppercase text-slate-300">
+                  Notas Internas de Administración (Opcional)
+                </label>
+                <textarea
+                  rows={2}
+                  value={customNotes}
+                  onChange={(e) => setCustomNotes(e.target.value)}
+                  placeholder="Ej. Taller especializado en cocinas integrales. Pago de licencia recibido por transferencia."
+                  className="w-full bg-slate-900 border-2 border-slate-700 text-white rounded-xl p-4 font-bold focus:border-amber-400 focus:outline-none text-sm"
+                />
+              </div>
+
+              {/* Botón de Guardado */}
+              <div className="pt-4 flex flex-col sm:flex-row items-center gap-4">
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full sm:w-auto flex-1 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 disabled:opacity-50 text-slate-950 font-black text-xl px-8 py-5 rounded-2xl shadow-2xl border-2 border-amber-300 flex items-center justify-center gap-3 transition transform active:scale-95 cursor-pointer"
+                >
+                  {loading ? (
+                    <>
+                      <RefreshCw className="w-7 h-7 text-slate-950 animate-spin" />
+                      <span>GUARDANDO...</span>
+                    </>
+                  ) : (
+                    <>
+                      <PlusCircle className="w-7 h-7 text-slate-950" />
+                      <span>Guardar Taller</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('tenants')}
+                  className="w-full sm:w-auto bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-base px-6 py-5 rounded-2xl border border-slate-700 transition cursor-pointer"
+                >
+                  Cancelar
+                </button>
+              </div>
 
             </form>
 
@@ -1291,92 +1332,115 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
 
       </main>
 
-      {/* ================= MODAL: CREDENCIALES PARA ENVIAR AL CLIENTE ================= */}
+      {/* ================= MODAL: CREDENCIALES DE ACCESO ================= */}
       {credentialsModalTenant && (
-        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-          <div className="bg-slate-950 border-4 border-amber-500 rounded-3xl max-w-2xl w-full p-6 sm:p-8 space-y-6 shadow-2xl text-white">
+        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-950 border-4 border-amber-400 rounded-3xl p-6 sm:p-8 max-w-xl w-full shadow-2xl space-y-6 animate-in fade-in zoom-in-95 duration-200">
             
             <div className="flex items-center justify-between border-b-2 border-slate-800 pb-4">
               <div className="flex items-center gap-3">
-                <span className="text-3xl">📋</span>
+                <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-300 border border-amber-400 flex items-center justify-center text-2xl font-black">
+                  🪵
+                </div>
                 <div>
-                  <h3 className="text-2xl font-black text-white">Credenciales de Acceso</h3>
-                  <p className="text-sm font-bold text-amber-400">{credentialsModalTenant.name}</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setCredentialsModalTenant(null)}
-                className="text-slate-400 hover:text-white font-black text-xl p-2 cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              {/* Tarjeta Maestro */}
-              <div className="bg-slate-900 p-4 rounded-2xl border border-amber-500/40 space-y-2">
-                <div className="flex justify-between items-center">
-                  <h4 className="font-black text-amber-300 text-sm uppercase">🪚 Acceso Maestro (Completo)</h4>
-                  <button
-                    onClick={() => handleCopyText(`Taller: ${credentialsModalTenant.name}\nUsuario Maestro: ${credentialsModalTenant.masterAccount.email}\nContraseña: ${credentialsModalTenant.masterAccount.password || 'taller2026'}\nAcceso completo a todos los módulos.`, 'copy_m_block')}
-                    className="text-xs bg-amber-500 text-slate-950 font-black px-3 py-1 rounded-lg flex items-center gap-1 cursor-pointer"
-                  >
-                    {copiedKey === 'copy_m_block' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                    Copiar Datos Maestro
-                  </button>
-                </div>
-                <p className="text-sm text-slate-300"><strong>Usuario:</strong> {credentialsModalTenant.masterAccount.email}</p>
-                <p className="text-sm text-slate-300"><strong>Contraseña:</strong> <span className="font-mono text-amber-400">{credentialsModalTenant.masterAccount.password || 'taller2026'}</span></p>
-                <p className="text-xs text-slate-400">Privilegios: Módulo 1 (Diseño), Módulo 2 (Corte), Módulo 3 (Armado), Módulo 4 (Cotizaciones & Catálogo de Precios).</p>
-              </div>
-
-              {/* Tarjeta Operario (Si existe o si está desactivada) */}
-              {credentialsModalTenant.operatorAccount ? (
-                <div className="bg-slate-900 p-4 rounded-2xl border border-orange-500/40 space-y-2">
-                  <div className="flex justify-between items-center">
-                    <h4 className="font-black text-orange-300 text-sm uppercase">🔨 Acceso Operario / Chalán</h4>
-                    <button
-                      onClick={() => handleCopyText(`Taller: ${credentialsModalTenant.name}\nUsuario Operario: ${credentialsModalTenant.operatorAccount!.email}\nContraseña: ${credentialsModalTenant.operatorAccount!.password || 'chalan2026'}\nAcceso solo taller (Módulos 2 y 3).`, 'copy_op_block')}
-                      className="text-xs bg-orange-500 text-white font-black px-3 py-1 rounded-lg flex items-center gap-1 cursor-pointer"
-                    >
-                      {copiedKey === 'copy_op_block' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                      Copiar Datos Operario
-                    </button>
-                  </div>
-                  <p className="text-sm text-slate-300"><strong>Usuario:</strong> {credentialsModalTenant.operatorAccount.email}</p>
-                  <p className="text-sm text-slate-300"><strong>Contraseña:</strong> <span className="font-mono text-orange-400">{credentialsModalTenant.operatorAccount.password || 'chalan2026'}</span></p>
-                  <p className="text-xs text-slate-400">Privilegios: Solo Módulos 2 (Corte en Sierra) y Módulo 3 (Armado & Canteado). Precios y cotizaciones 100% ocultos.</p>
-                </div>
-              ) : (
-                <div className="bg-slate-900/60 p-4 rounded-2xl border border-dashed border-slate-800 space-y-2">
-                  <div className="flex justify-between items-center">
-                    <h4 className="font-black text-slate-400 text-sm uppercase">🔨 Cuenta Operario / Chalán</h4>
-                    <button
-                      onClick={async () => {
-                        const updated = await createOrActivateTenantOperator(credentialsModalTenant.id);
-                        if (updated) setCredentialsModalTenant(updated);
-                      }}
-                      className="text-xs bg-orange-600 hover:bg-orange-500 text-white font-black px-3 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer shadow"
-                    >
-                      <Sparkles className="w-3 h-3 text-amber-200" />
-                      Activar Operario (1 Clic)
-                    </button>
-                  </div>
-                  <p className="text-xs text-slate-400">
-                    Este taller no cuenta con acceso de operario activo. Opera únicamente con la cuenta del Maestro.
+                  <h3 className="text-2xl font-black text-white">
+                    {credentialsModalTenant.name}
+                  </h3>
+                  <p className="text-xs font-bold text-amber-400">
+                    Credenciales de Acceso al Sistema
                   </p>
                 </div>
-              )}
-            </div>
+              </div>
 
-            <div className="pt-2 flex justify-end">
               <button
                 onClick={() => setCredentialsModalTenant(null)}
-                className="bg-slate-800 hover:bg-slate-700 text-white font-black px-6 py-3 rounded-xl border border-slate-700 cursor-pointer"
+                className="text-slate-400 hover:text-white p-2 rounded-xl bg-slate-900 border border-slate-800 text-sm font-bold cursor-pointer"
               >
-                ENTENDIDO, CERRAR
+                ✕ Cerrar
               </button>
             </div>
+
+            {/* Credenciales Maestro */}
+            <div className="bg-slate-900 p-5 rounded-2xl border-2 border-amber-500/40 space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-black text-amber-300 uppercase flex items-center gap-2">
+                  <span>🪚</span>
+                  Cuenta Maestro (Completa)
+                </h4>
+                <span className="text-[10px] bg-amber-400/20 text-amber-300 px-2 py-0.5 rounded-full font-bold">
+                  MÓDULOS 1, 2, 3, 4
+                </span>
+              </div>
+
+              <div className="space-y-2 text-xs font-bold font-mono">
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 flex justify-between items-center">
+                  <span className="text-slate-400">Correo:</span>
+                  <span className="text-white">{credentialsModalTenant.masterAccount.email}</span>
+                </div>
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 flex justify-between items-center">
+                  <span className="text-slate-400">Contraseña:</span>
+                  <span className="text-amber-300">{credentialsModalTenant.masterAccount.password || 'taller2026'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Credenciales Operario */}
+            {credentialsModalTenant.operatorAccount && (
+              <div className="bg-slate-900 p-5 rounded-2xl border-2 border-orange-500/40 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-black text-orange-400 uppercase flex items-center gap-2">
+                    <span>🔨</span>
+                    Cuenta Operario / Chalán
+                  </h4>
+                  <span className="text-[10px] bg-orange-400/20 text-orange-300 px-2 py-0.5 rounded-full font-bold">
+                    SOLO CORTE (M2 & M3)
+                  </span>
+                </div>
+
+                <div className="space-y-2 text-xs font-bold font-mono">
+                  <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 flex justify-between items-center">
+                    <span className="text-slate-400">Correo:</span>
+                    <span className="text-white">{credentialsModalTenant.operatorAccount.email}</span>
+                  </div>
+                  <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 flex justify-between items-center">
+                    <span className="text-slate-400">Contraseña:</span>
+                    <span className="text-orange-300">{credentialsModalTenant.operatorAccount.password || 'chalan2026'}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Botón para copiar texto formateado para WhatsApp / Correo */}
+            <button
+              onClick={() => {
+                const text = `🪵 *ACCESO AL SISTEMA DE CARPINTERÍA - ${credentialsModalTenant.name.toUpperCase()}*\n\n` +
+                  `🪚 *Cuenta de Maestro (Acceso Total):*\n` +
+                  `• Correo: ${credentialsModalTenant.masterAccount.email}\n` +
+                  `• Contraseña: ${credentialsModalTenant.masterAccount.password || 'taller2026'}\n\n` +
+                  (credentialsModalTenant.operatorAccount ? (
+                    `🔨 *Cuenta de Operario (Solo Corte y Sobrantes):*\n` +
+                    `• Correo: ${credentialsModalTenant.operatorAccount.email}\n` +
+                    `• Contraseña: ${credentialsModalTenant.operatorAccount.password || 'chalan2026'}\n\n`
+                  ) : '') +
+                  `📅 Vigencia de Licencia: ${credentialsModalTenant.licenseExpiry || 'Activa'}\n` +
+                  `🌐 Enlace de acceso: ${typeof window !== 'undefined' ? window.location.origin : ''}`;
+
+                handleCopyText(text, 'modal_full_text');
+              }}
+              className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-base py-4 rounded-2xl border-2 border-amber-300 shadow-xl flex items-center justify-center gap-2 transition cursor-pointer"
+            >
+              {copiedKey === 'modal_full_text' ? (
+                <>
+                  <Check className="w-5 h-5 text-slate-950" />
+                  <span>¡TEXTO COPIADO AL PORTAPAPELES!</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-5 h-5 text-slate-950" />
+                  <span>COPIAR MENSAJE COMPLETO PARA WHATSAPP</span>
+                </>
+              )}
+            </button>
 
           </div>
         </div>
