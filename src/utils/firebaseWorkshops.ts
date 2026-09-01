@@ -199,6 +199,85 @@ export async function deleteWorkshopFromFirestore(tenantId: string): Promise<{ s
 }
 
 /**
+ * Helper to normalize Firestore workshop doc data into WorkshopTenant
+ */
+export function normalizeWorkshopDoc(id: string, raw: any): WorkshopTenant {
+  const name = raw.nombreTaller || raw.name || 'Taller de Carpintería';
+  const ownerName = raw.duenoNombre || raw.ownerName || '';
+  const phone = raw.telefono || raw.phone || '';
+  const city = raw.ciudad || raw.city || '';
+  const address = raw.address || '';
+  const taxId = raw.taxId || '';
+  const licensePlan = (raw.plan || raw.licensePlan || 'anual') as any;
+  const estado = raw.estado || (raw.status === 'suspendida' ? 'suspendido' : raw.status === 'vencida' ? 'vencido' : 'activo');
+  const status = raw.status || (estado === 'suspendido' ? 'suspendida' : estado === 'vencido' ? 'vencida' : 'activa');
+  const licenseExpiry = raw.vencimiento || raw.licenseExpiry || '2027-12-31';
+  const createdAt = raw.createdAt || new Date().toISOString().split('T')[0];
+  const lastAccess = raw.lastAccess || 'Nunca';
+
+  // Maestro account
+  const maestroObj = raw.maestro || {};
+  const masterAccount = raw.masterAccount || {
+    id: maestroObj.id || `usr_${id}_m`,
+    name: maestroObj.nombre || maestroObj.name || ownerName || 'Maestro Encargado',
+    email: maestroObj.email || raw.masterEmail || '',
+    password: maestroObj.password || 'taller2026',
+    role: 'maestro'
+  };
+
+  // Operario account
+  let operatorAccount = raw.operatorAccount;
+  if (!operatorAccount && raw.operario) {
+    operatorAccount = {
+      id: raw.operario.id || `usr_${id}_op`,
+      name: raw.operario.nombre || raw.operario.name || 'Operario de Taller',
+      email: raw.operario.email || '',
+      password: raw.operario.password || 'chalan2026',
+      role: 'operario'
+    };
+  }
+
+  return {
+    id,
+    name,
+    tradeName: raw.tradeName || name,
+    ownerName,
+    taxId,
+    phone,
+    city,
+    address,
+    licensePlan,
+    status,
+    estado,
+    licenseExpiry,
+    createdAt,
+    lastAccess,
+    activeProjectsCount: raw.activeProjectsCount || 0,
+    totalProjectsCount: raw.totalProjectsCount || 0,
+    masterAccount,
+    operatorAccount: operatorAccount || undefined,
+    maestro: {
+      id: masterAccount.id,
+      name: masterAccount.name,
+      email: masterAccount.email,
+      password: masterAccount.password,
+      role: 'MAESTRO'
+    },
+    operario: operatorAccount ? {
+      id: operatorAccount.id,
+      name: operatorAccount.name,
+      email: operatorAccount.email,
+      password: operatorAccount.password,
+      role: 'OPERARIO'
+    } : null,
+    customNotes: raw.customNotes || '',
+    monthlyStats: raw.monthlyStats || [
+      { month: new Date().toISOString().substring(0, 7), projectsCount: 0, cutsCount: 0 }
+    ]
+  };
+}
+
+/**
  * Subscribe in real-time to Firestore workshops collection (onSnapshot)
  */
 export function subscribeToWorkshopsRealtime(
@@ -225,8 +304,8 @@ export function subscribeToWorkshopsRealtime(
       (snapshot) => {
         const workshops: WorkshopTenant[] = [];
         snapshot.forEach((docSnap) => {
-          const data = docSnap.data() as WorkshopTenant;
-          workshops.push({ ...data, id: docSnap.id });
+          const item = normalizeWorkshopDoc(docSnap.id, docSnap.data());
+          workshops.push(item);
         });
 
         // Save to cache for offline availability
@@ -268,8 +347,8 @@ export async function fetchWorkshopsOnce(): Promise<WorkshopTenant[]> {
       const snapshot = await getDocs(workshopsRef);
       const workshops: WorkshopTenant[] = [];
       snapshot.forEach((docSnap) => {
-        const data = docSnap.data() as WorkshopTenant;
-        workshops.push({ ...data, id: docSnap.id });
+        const item = normalizeWorkshopDoc(docSnap.id, docSnap.data());
+        workshops.push(item);
       });
 
       if (workshops.length > 0) {

@@ -1,20 +1,28 @@
 import React, { useState, useEffect } from 'react';
 import { WorkshopTenant, User, GlobalPlatformStats } from '../types';
+import { db } from '../lib/firebase';
+import {
+  collection,
+  addDoc,
+  doc,
+  getDocs,
+  updateDoc,
+  deleteDoc,
+  onSnapshot,
+  query,
+  orderBy
+} from 'firebase/firestore';
 import {
   getAllTenants,
-  createNewTenant,
-  updateTenant,
-  toggleTenantStatus,
-  deleteTenant,
   getGlobalPlatformStats,
   getTenantProjects,
   removeTenantOperatorAccount,
   createOrActivateTenantOperator
 } from '../utils/tenants';
 import {
-  subscribeToWorkshopsRealtime,
   fetchWorkshopsOnce,
-  saveWorkshopToFirestore
+  normalizeWorkshopDoc,
+  saveWorkshopsToLocalCache
 } from '../utils/firebaseWorkshops';
 import {
   ShieldCheck,
@@ -47,7 +55,6 @@ import {
   Eye,
   EyeOff,
   Trash2,
-  Edit3,
   Search,
   Filter
 } from 'lucide-react';
@@ -55,8 +62,6 @@ import {
   ResponsiveContainer,
   AreaChart,
   Area,
-  BarChart,
-  Bar,
   XAxis,
   YAxis,
   Tooltip,
@@ -102,58 +107,80 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
     return d.toISOString().split('T')[0];
   };
 
-  // New Tenant Form State
-  const [newWorkshopName, setNewWorkshopName] = useState('');
-  const [newOwnerName, setNewOwnerName] = useState('');
-  const [newTaxId, setNewTaxId] = useState('');
-  const [newPhone, setNewPhone] = useState('');
-  const [newCity, setNewCity] = useState('');
-  const [newAddress, setNewAddress] = useState('');
-  const [newPlan, setNewPlan] = useState<'mensual' | 'anual' | 'vitalicia' | 'demo'>('anual');
-  const [newExpiry, setNewExpiry] = useState<string>(() => calculateExpiryDate('anual'));
-  const [newNotes, setNewNotes] = useState('');
+  // Form State for creating a workshop (Direct Firestore)
+  const [nombreTaller, setNombreTaller] = useState('');
+  const [duenoNombre, setDuenoNombre] = useState('');
+  const [ciudad, setCiudad] = useState('');
+  const [telefono, setTelefono] = useState('');
+  const [taxId, setTaxId] = useState('');
+  const [address, setAddress] = useState('');
+  const [plan, setPlan] = useState<'mensual' | 'anual' | 'vitalicia' | 'demo'>('anual');
+  const [vencimiento, setVencimiento] = useState<string>(() => calculateExpiryDate('anual'));
+  const [customNotes, setCustomNotes] = useState('');
 
-  // Handle plan change and automatically recalculate expiry date
-  const handlePlanChange = (plan: 'mensual' | 'anual' | 'vitalicia' | 'demo') => {
-    setNewPlan(plan);
-    setNewExpiry(calculateExpiryDate(plan));
+  // Maestro Account State
+  const [maestroNombre, setMaestroNombre] = useState('');
+  const [maestroEmail, setMaestroEmail] = useState('');
+  const [maestroPassword, setMaestroPassword] = useState('taller2026');
+
+  // Operario Account State (Opcional)
+  const [hasOperario, setHasOperario] = useState(false);
+  const [operarioNombre, setOperarioNombre] = useState('');
+  const [operarioEmail, setOperarioEmail] = useState('');
+  const [operarioPassword, setOperarioPassword] = useState('chalan2026');
+
+  const [loading, setLoading] = useState(false);
+  const [isFirebaseSyncing, setIsFirebaseSyncing] = useState(false);
+
+  // Handle plan change and calculate default expiry
+  const handlePlanChange = (selectedPlan: 'mensual' | 'anual' | 'vitalicia' | 'demo') => {
+    setPlan(selectedPlan);
+    setVencimiento(calculateExpiryDate(selectedPlan));
   };
 
-  // Maestro Account
-  const [newMasterName, setNewMasterName] = useState('');
-  const [newMasterEmail, setNewMasterEmail] = useState('');
-  const [newMasterPassword, setNewMasterPassword] = useState('taller2026');
+  // Auto-suggest emails on workshop name typing
+  const handleWorkshopNameChange = (val: string) => {
+    setNombreTaller(val);
+    const clean = val
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '')
+      .slice(0, 12);
+    if (clean && !maestroEmail) {
+      setMaestroEmail(`maestro@${clean}.com`);
+    }
+    if (clean && !operarioEmail) {
+      setOperarioEmail(`operario@${clean}.com`);
+    }
+  };
 
-  // Operario / Chalán Account (Opcional)
-  const [includeOperatorAccount, setIncludeOperatorAccount] = useState(false);
-  const [newOpName, setNewOpName] = useState('');
-  const [newOpEmail, setNewOpEmail] = useState('');
-  const [newOpPassword, setNewOpPassword] = useState('chalan2026');
-
-  const [formSuccessMessage, setFormSuccessMessage] = useState('');
-  const [formErrorMessage, setFormErrorMessage] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const [isFirebaseSyncing, setIsFirebaseSyncing] = useState(false);
-  const [firestoreConnected, setFirestoreConnected] = useState(true);
-
-  // Subscribe directly to Firestore onSnapshot in real time
+  // Real-time Firestore sync via onSnapshot
   useEffect(() => {
+    if (!db) return;
     setIsFirebaseSyncing(true);
 
-    const unsubscribe = subscribeToWorkshopsRealtime(
-      (updatedWorkshops) => {
-        // Clean out legacy demo workshops
-        const filtered = updatedWorkshops.filter(
-          w => w.id !== 'taller_don_jose' && w.id !== 'taller_los_cedros' && w.id !== 'taller_cocinas_vanguardia'
-        );
-        setTenants(filtered);
+    const workshopsRef = collection(db, 'workshops');
+    const q = query(workshopsRef, orderBy('createdAt', 'desc'));
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const list: WorkshopTenant[] = [];
+        snapshot.forEach((docSnap) => {
+          const item = normalizeWorkshopDoc(docSnap.id, docSnap.data());
+          // Filter legacy mock names if present
+          if (item.id !== 'taller_don_jose' && item.id !== 'taller_los_cedros' && item.id !== 'taller_cocinas_vanguardia') {
+            list.push(item);
+          }
+        });
+        setTenants(list);
+        saveWorkshopsToLocalCache(list);
         setStats(getGlobalPlatformStats());
         setIsFirebaseSyncing(false);
-        setFirestoreConnected(true);
       },
-      (error) => {
-        console.warn('Firestore onSnapshot subscription notice:', error);
+      (err) => {
+        console.warn('Error en onSnapshot Firestore:', err);
         setIsFirebaseSyncing(false);
       }
     );
@@ -180,130 +207,152 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
     }
   };
 
-  // Auto-generate suggested emails when typing workshop name
-  const handleWorkshopNameChange = (val: string) => {
-    setNewWorkshopName(val);
-    const clean = val
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-z0-9]+/g, '')
-      .slice(0, 12);
-    if (clean && !newMasterEmail) {
-      setNewMasterEmail(`maestro@${clean}.com`);
-    }
-    if (clean && !newOpEmail) {
-      setNewOpEmail(`operario@${clean}.com`);
-    }
-  };
-
-  // Create Tenant Handler in Firestore & Firebase Auth
-  const handleCreateTenant = async (e: React.FormEvent) => {
+  /**
+   * Direct Firestore Creation with strict Try / Catch / Finally.
+   * Completely independent of Firebase Auth.
+   */
+  const handleCreateWorkshop = async (e: React.FormEvent) => {
     e.preventDefault();
-    setFormErrorMessage('');
-    setFormSuccessMessage('');
 
-    if (!newWorkshopName.trim() || !newOwnerName.trim() || !newPhone.trim() || !newCity.trim()) {
-      setFormErrorMessage('Por favor complete todos los datos obligatorios del taller.');
+    if (!nombreTaller.trim() || !duenoNombre.trim() || !telefono.trim() || !ciudad.trim()) {
+      alert('Por favor complete todos los datos obligatorios del taller.');
       return;
     }
 
-    if (!newMasterEmail.trim()) {
-      setFormErrorMessage('Debe especificar el correo de acceso para la cuenta del Maestro.');
+    if (!maestroEmail.trim()) {
+      alert('Debe especificar el correo de acceso para la cuenta del Maestro.');
       return;
     }
 
-    if (includeOperatorAccount && !newOpEmail.trim()) {
-      setFormErrorMessage('Ha marcado la creación de cuenta de Operario; ingrese su correo o desactive la opción.');
+    if (hasOperario && !operarioEmail.trim()) {
+      alert('Ha activado la cuenta de Operario; ingrese su correo o desactive la opción.');
       return;
     }
 
-    setIsSubmitting(true);
+    setLoading(true);
 
     try {
-      const created = await createNewTenant({
-        name: newWorkshopName,
-        ownerName: newOwnerName,
-        tradeName: newWorkshopName,
-        taxId: newTaxId,
-        phone: newPhone,
-        city: newCity,
-        address: newAddress,
-        licensePlan: newPlan,
-        licenseExpiry: newExpiry,
-        masterName: newMasterName || `Maestro ${newOwnerName.split(' ')[0]}`,
-        masterEmail: newMasterEmail,
-        masterPassword: newMasterPassword,
-        includeOperator: includeOperatorAccount,
-        operatorName: includeOperatorAccount ? (newOpName || 'Operario / Chalán') : undefined,
-        operatorEmail: includeOperatorAccount ? newOpEmail : undefined,
-        operatorPassword: includeOperatorAccount ? newOpPassword : undefined,
-        customNotes: newNotes
-      });
+      const cleanMaestroEmail = maestroEmail.trim().toLowerCase();
+      const cleanOperarioEmail = operarioEmail.trim().toLowerCase();
 
-      setFormSuccessMessage(
-        `¡Taller "${created.name}" guardado directamente en Firebase Firestore y activado con licencia ${created.licensePlan.toUpperCase()}! ${
-          created.operatorAccount ? '(Con cuenta de Maestro y Operario)' : '(Cuenta única de Maestro)'
-        }`
-      );
-      
-      // Clear form and reset expiry to default for current plan
-      setNewWorkshopName('');
-      setNewOwnerName('');
-      setNewTaxId('');
-      setNewPhone('');
-      setNewCity('');
-      setNewAddress('');
-      setNewMasterName('');
-      setNewMasterEmail('');
-      setIncludeOperatorAccount(false);
-      setNewOpName('');
-      setNewOpEmail('');
-      setNewNotes('');
-      setNewPlan('anual');
-      setNewExpiry(calculateExpiryDate('anual'));
+      const maestroObj = {
+        nombre: maestroNombre.trim() || duenoNombre.trim() || 'Maestro Encargado',
+        name: maestroNombre.trim() || duenoNombre.trim() || 'Maestro Encargado',
+        email: cleanMaestroEmail,
+        password: maestroPassword || 'taller2026',
+        role: 'MAESTRO' as const
+      };
 
-      // Open credentials modal for immediate copying
-      setCredentialsModalTenant(created);
+      const operarioObj = hasOperario ? {
+        nombre: operarioNombre.trim() || 'Operario / Chalán',
+        name: operarioNombre.trim() || 'Operario / Chalán',
+        email: cleanOperarioEmail,
+        password: operarioPassword || 'chalan2026',
+        role: 'OPERARIO' as const
+      } : null;
+
+      const newDocData = {
+        nombreTaller: nombreTaller.trim(),
+        name: nombreTaller.trim(),
+        duenoNombre: duenoNombre.trim(),
+        ownerName: duenoNombre.trim(),
+        ciudad: ciudad.trim(),
+        city: ciudad.trim(),
+        telefono: telefono.trim(),
+        phone: telefono.trim(),
+        taxId: taxId.trim(),
+        address: address.trim(),
+        plan,
+        licensePlan: plan,
+        vencimiento,
+        licenseExpiry: vencimiento,
+        maestro: maestroObj,
+        operario: operarioObj,
+        masterAccount: {
+          id: `usr_${Date.now()}_m`,
+          name: maestroObj.nombre,
+          email: maestroObj.email,
+          password: maestroObj.password,
+          role: 'maestro' as const
+        },
+        operatorAccount: operarioObj ? {
+          id: `usr_${Date.now()}_op`,
+          name: operarioObj.nombre,
+          email: operarioObj.email,
+          password: operarioObj.password,
+          role: 'operario' as const
+        } : undefined,
+        estado: 'activo',
+        status: 'activa',
+        createdAt: new Date().toISOString(),
+        lastAccess: 'Nunca',
+        activeProjectsCount: 0,
+        totalProjectsCount: 0,
+        customNotes: customNotes.trim()
+      };
+
+      if (!db) {
+        throw new Error('No se pudo conectar con Firestore. Verifique su conexión de red.');
+      }
+
+      const docRef = await addDoc(collection(db, 'workshops'), newDocData);
+
+      // Normalization for modal and immediate display
+      const normalizedCreated = normalizeWorkshopDoc(docRef.id, newDocData);
+      setCredentialsModalTenant(normalizedCreated);
+
+      // Reset Form State
+      setNombreTaller('');
+      setDuenoNombre('');
+      setCiudad('');
+      setTelefono('');
+      setTaxId('');
+      setAddress('');
+      setMaestroNombre('');
+      setMaestroEmail('');
+      setMaestroPassword('taller2026');
+      setHasOperario(false);
+      setOperarioNombre('');
+      setOperarioEmail('');
+      setOperarioPassword('chalan2026');
+      setCustomNotes('');
+      setPlan('anual');
+      setVencimiento(calculateExpiryDate('anual'));
+
+      alert('¡Taller guardado con éxito en Firestore! ID: ' + docRef.id);
       setActiveTab('tenants');
-
-      // Refresh list immediately from Firestore
-      try {
-        const freshList = await fetchWorkshopsOnce();
-        if (freshList && freshList.length > 0) {
-          setTenants(freshList);
-          setStats(getGlobalPlatformStats());
-        }
-      } catch (_) {}
     } catch (err: any) {
-      const errorMsg = err?.message || String(err) || 'Error desconocido al procesar en Firebase';
-      setFormErrorMessage('Error al guardar en Firebase: ' + errorMsg);
-      alert('Error al guardar en Firebase: ' + errorMsg);
+      console.error('Error al crear taller en Firestore:', err);
+      alert('Error al guardar en Firestore: ' + (err?.message || err));
     } finally {
-      setIsSubmitting(false);
+      setLoading(false);
     }
   };
 
   // Toggle Status in Firestore
-  const handleToggleStatus = async (tenantId: string) => {
+  const handleToggleStatus = async (tenantId: string, currentStatus: string) => {
     try {
-      await toggleTenantStatus(tenantId);
-      const fresh = await fetchWorkshopsOnce();
-      setTenants(fresh);
-      setStats(getGlobalPlatformStats());
+      if (!db) return;
+      const nextStatus = currentStatus === 'activa' ? 'suspendida' : 'activa';
+      const nextEstado = nextStatus === 'activa' ? 'activo' : 'suspendido';
+
+      const docRef = doc(db, 'workshops', tenantId);
+      await updateDoc(docRef, {
+        status: nextStatus,
+        estado: nextEstado
+      });
     } catch (e: any) {
       alert('Error al cambiar el estado del taller en Firestore: ' + (e?.message || e));
     }
   };
 
-  // Delete Tenant from Firestore & local caches
+  // Delete Tenant from Firestore
   const handleDeleteTenant = async (tenant: WorkshopTenant) => {
-    if (window.confirm(`¿Está seguro de eliminar definitivamente el taller "${tenant.name}" de Firebase Firestore y todos sus registros asociados?`)) {
+    if (window.confirm(`¿Está seguro de eliminar definitivamente el taller "${tenant.name}" de Firebase Firestore?`)) {
       try {
-        await deleteTenant(tenant.id);
-        const fresh = await fetchWorkshopsOnce();
-        setTenants(fresh);
-        setStats(getGlobalPlatformStats());
+        if (!db) return;
+        const docRef = doc(db, 'workshops', tenant.id);
+        await deleteDoc(docRef);
       } catch (e: any) {
         alert('Error al eliminar el taller de Firestore: ' + (e?.message || e));
       }
@@ -312,11 +361,16 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
 
   // Delete Operator Account in Firestore
   const handleDeleteOperatorAccount = async (tenant: WorkshopTenant) => {
-    if (window.confirm(`¿Desea eliminar la cuenta de Operario del taller "${tenant.name}" de Firestore?\n\nEl operario ya no podrá iniciar sesión. Podrá reactivarla o crearla nuevamente en cualquier momento con un solo clic.`)) {
+    if (window.confirm(`¿Desea eliminar la cuenta de Operario del taller "${tenant.name}" de Firestore?`)) {
       try {
         await removeTenantOperatorAccount(tenant.id);
-        const fresh = await fetchWorkshopsOnce();
-        setTenants(fresh);
+        if (db) {
+          const docRef = doc(db, 'workshops', tenant.id);
+          await updateDoc(docRef, {
+            operario: null,
+            operatorAccount: null
+          });
+        }
       } catch (e: any) {
         alert('Error al eliminar la cuenta de operario: ' + (e?.message || e));
       }
@@ -329,8 +383,18 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
       const updated = await createOrActivateTenantOperator(tenant.id);
       if (updated) {
         setCredentialsModalTenant(updated);
-        const fresh = await fetchWorkshopsOnce();
-        setTenants(fresh);
+        if (db) {
+          const docRef = doc(db, 'workshops', tenant.id);
+          await updateDoc(docRef, {
+            operario: {
+              nombre: updated.operatorAccount?.name || 'Operario de Taller',
+              email: updated.operatorAccount?.email || `operario@${tenant.id}.com`,
+              password: updated.operatorAccount?.password || 'chalan2026',
+              role: 'OPERARIO'
+            },
+            operatorAccount: updated.operatorAccount
+          });
+        }
       }
     } catch (e: any) {
       alert('Error al activar la cuenta de operario en Firestore: ' + (e?.message || e));
@@ -426,13 +490,13 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
           <div className="space-y-2">
             <span className="inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-widest text-amber-400 bg-amber-950/80 px-3 py-1 rounded-full border border-amber-600/40">
               <Sparkles className="w-3.5 h-3.5" />
-              Centro de Control Global SaaS • Firebase Firestore
+              Centro de Control Global SaaS • Firebase Firestore Directo
             </span>
             <h2 className="text-3xl sm:text-4xl font-black text-white tracking-tight">
               Gestión de Licencias y Talleres Clientes
             </h2>
             <p className="text-base sm:text-lg text-slate-300 font-medium max-w-2xl">
-              Crea nuevos talleres con persistencia 100% en tiempo real en Firestore, asigna cuentas para Maestros y Operarios en Firebase Auth, y supervisa métricas globales.
+              Crea nuevos talleres con persistencia 100% directa en Firestore, asigna cuentas para Maestros y Operarios, y supervisa métricas globales.
             </p>
           </div>
 
@@ -797,7 +861,7 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
 
                     <div className="flex items-center gap-2 w-full sm:w-auto">
                       <button
-                        onClick={() => handleToggleStatus(t.id)}
+                        onClick={() => handleToggleStatus(t.id, t.status)}
                         className={`w-full sm:w-auto font-black text-xs px-4 py-2.5 rounded-xl border flex items-center justify-center gap-2 transition cursor-pointer ${
                           t.status === 'activa'
                             ? 'bg-rose-950/80 hover:bg-rose-900 text-rose-300 border-rose-700'
@@ -825,7 +889,7 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
                   <div className="text-5xl">🪵</div>
                   <h4 className="text-2xl font-black text-white">No hay talleres clientes registrados en Firestore</h4>
                   <p className="text-slate-400 font-medium max-w-md mx-auto">
-                    Los datos simulados han sido removidos. Haz clic en "Crear Nuevo Taller Cliente" para registrar tu primer taller en Firebase.
+                    Haz clic en "Crear Nuevo Taller Cliente" para registrar tu primer taller en Firebase.
                   </p>
                   <button
                     onClick={() => setActiveTab('new_tenant')}
@@ -950,7 +1014,7 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
           </div>
         )}
 
-        {/* ================= TAB 3: FORMULARIO CREAR NUEVO TALLER ================= */}
+        {/* ================= TAB 3: FORMULARIO CREAR NUEVO TALLER (DIRECT FIRESTORE) ================= */}
         {activeTab === 'new_tenant' && (
           <div className="bg-slate-950 p-6 sm:p-10 rounded-3xl border-4 border-amber-500/40 shadow-2xl space-y-8 max-w-4xl mx-auto">
             
@@ -960,25 +1024,11 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
                 ALTA DE NUEVO TALLER CLIENTE & LICENCIA
               </h3>
               <p className="text-base text-slate-300 font-medium">
-                Define los datos del taller cliente y genera automáticamente las cuentas en Firebase Auth y el documento en Firestore.
+                Define los datos del taller cliente y guarda el documento directamente en Firestore con acceso para Maestro y Operario.
               </p>
             </div>
 
-            {formSuccessMessage && (
-              <div className="bg-emerald-950 border-2 border-emerald-500 p-5 rounded-2xl text-emerald-200 font-bold flex items-center gap-3">
-                <CheckCircle2 className="w-6 h-6 text-emerald-400 shrink-0" />
-                <span>{formSuccessMessage}</span>
-              </div>
-            )}
-
-            {formErrorMessage && (
-              <div className="bg-rose-950 border-2 border-rose-500 p-5 rounded-2xl text-rose-200 font-bold flex items-center gap-3">
-                <AlertTriangle className="w-6 h-6 text-rose-400 shrink-0" />
-                <span>{formErrorMessage}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleCreateTenant} className="space-y-8">
+            <form onSubmit={handleCreateWorkshop} className="space-y-8">
               
               {/* Sección 1: Datos del Taller / Empresa */}
               <div className="space-y-4">
@@ -993,7 +1043,7 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
                     <input
                       type="text"
                       required
-                      value={newWorkshopName}
+                      value={nombreTaller}
                       onChange={(e) => handleWorkshopNameChange(e.target.value)}
                       placeholder="Ej. Carpintería San Mateo"
                       className="w-full bg-slate-900 border-2 border-slate-700 text-white rounded-xl p-3.5 font-bold focus:border-amber-400 focus:outline-none"
@@ -1005,10 +1055,10 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
                     <input
                       type="text"
                       required
-                      value={newOwnerName}
+                      value={duenoNombre}
                       onChange={(e) => {
-                        setNewOwnerName(e.target.value);
-                        if (!newMasterName) setNewMasterName(e.target.value);
+                        setDuenoNombre(e.target.value);
+                        if (!maestroNombre) setMaestroNombre(e.target.value);
                       }}
                       placeholder="Ej. Mateo Gómez"
                       className="w-full bg-slate-900 border-2 border-slate-700 text-white rounded-xl p-3.5 font-bold focus:border-amber-400 focus:outline-none"
@@ -1020,8 +1070,8 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
                     <input
                       type="text"
                       required
-                      value={newCity}
-                      onChange={(e) => setNewCity(e.target.value)}
+                      value={ciudad}
+                      onChange={(e) => setCiudad(e.target.value)}
                       placeholder="Ej. Puebla, Pue."
                       className="w-full bg-slate-900 border-2 border-slate-700 text-white rounded-xl p-3.5 font-bold focus:border-amber-400 focus:outline-none"
                     />
@@ -1032,9 +1082,31 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
                     <input
                       type="text"
                       required
-                      value={newPhone}
-                      onChange={(e) => setNewPhone(e.target.value)}
+                      value={telefono}
+                      onChange={(e) => setTelefono(e.target.value)}
                       placeholder="Ej. +52 222 123 4567"
+                      className="w-full bg-slate-900 border-2 border-slate-700 text-white rounded-xl p-3.5 font-bold focus:border-amber-400 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-bold text-slate-300 mb-1">RFC / Identificación Fiscal</label>
+                    <input
+                      type="text"
+                      value={taxId}
+                      onChange={(e) => setTaxId(e.target.value)}
+                      placeholder="Ej. GOMA850212ABC"
+                      className="w-full bg-slate-900 border-2 border-slate-700 text-white rounded-xl p-3.5 font-bold focus:border-amber-400 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-bold text-slate-300 mb-1">Dirección del Taller</label>
+                    <input
+                      type="text"
+                      value={address}
+                      onChange={(e) => setAddress(e.target.value)}
+                      placeholder="Ej. Av. Carpinteros 104"
                       className="w-full bg-slate-900 border-2 border-slate-700 text-white rounded-xl p-3.5 font-bold focus:border-amber-400 focus:outline-none"
                     />
                   </div>
@@ -1042,7 +1114,7 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
                   <div>
                     <label className="block text-sm font-bold text-slate-300 mb-1">Plan de Licencia</label>
                     <select
-                      value={newPlan}
+                      value={plan}
                       onChange={(e: any) => handlePlanChange(e.target.value)}
                       className="w-full bg-slate-900 border-2 border-slate-700 text-white rounded-xl p-3.5 font-bold focus:border-amber-400 focus:outline-none cursor-pointer"
                     >
@@ -1060,8 +1132,8 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
                     </div>
                     <input
                       type="date"
-                      value={newExpiry}
-                      onChange={(e) => setNewExpiry(e.target.value)}
+                      value={vencimiento}
+                      onChange={(e) => setVencimiento(e.target.value)}
                       className="w-full bg-slate-900 border-2 border-slate-700 text-white rounded-xl p-3.5 font-bold focus:border-amber-400 focus:outline-none"
                     />
                   </div>
@@ -1085,8 +1157,8 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
                     <label className="block text-xs font-bold text-slate-300 mb-1">Nombre Completo</label>
                     <input
                       type="text"
-                      value={newMasterName}
-                      onChange={(e) => setNewMasterName(e.target.value)}
+                      value={maestroNombre}
+                      onChange={(e) => setMaestroNombre(e.target.value)}
                       placeholder="Maestro Mateo"
                       className="w-full bg-slate-950 border border-slate-700 text-white rounded-xl p-3 font-bold focus:border-amber-400 focus:outline-none text-sm"
                     />
@@ -1097,8 +1169,8 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
                     <input
                       type="email"
                       required
-                      value={newMasterEmail}
-                      onChange={(e) => setNewMasterEmail(e.target.value)}
+                      value={maestroEmail}
+                      onChange={(e) => setMaestroEmail(e.target.value)}
                       placeholder="maestro@taller.com"
                       className="w-full bg-slate-950 border border-slate-700 text-white rounded-xl p-3 font-bold focus:border-amber-400 focus:outline-none text-sm"
                     />
@@ -1108,8 +1180,8 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
                     <label className="block text-xs font-bold text-slate-300 mb-1">Contraseña de Acceso</label>
                     <input
                       type="text"
-                      value={newMasterPassword}
-                      onChange={(e) => setNewMasterPassword(e.target.value)}
+                      value={maestroPassword}
+                      onChange={(e) => setMaestroPassword(e.target.value)}
                       placeholder="taller2026"
                       className="w-full bg-slate-950 border border-slate-700 text-amber-300 rounded-xl p-3 font-mono font-bold focus:border-amber-400 focus:outline-none text-sm"
                     />
@@ -1119,15 +1191,15 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
 
               {/* Sección 3: Cuenta Secundaria del Operario / Chalán (Opcional) */}
               <div className={`p-6 rounded-2xl border-2 transition-all space-y-4 ${
-                includeOperatorAccount ? 'bg-slate-900 border-orange-500/50' : 'bg-slate-900/50 border-slate-800'
+                hasOperario ? 'bg-slate-900 border-orange-500/50' : 'bg-slate-900/50 border-slate-800'
               }`}>
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <input
                       type="checkbox"
                       id="toggleOperatorCreation"
-                      checked={includeOperatorAccount}
-                      onChange={(e) => setIncludeOperatorAccount(e.target.checked)}
+                      checked={hasOperario}
+                      onChange={(e) => setHasOperario(e.target.checked)}
                       className="w-5 h-5 accent-orange-500 rounded cursor-pointer"
                     />
                     <label htmlFor="toggleOperatorCreation" className="cursor-pointer">
@@ -1136,7 +1208,7 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
                         3. Cuenta de Operario / Chalán (Opcional)
                       </h4>
                       <p className="text-xs text-slate-400 font-medium">
-                        {includeOperatorAccount
+                        {hasOperario
                           ? 'Acceso restringido a Sierra (M2) y Armado (M3) sin precios ni cotizaciones'
                           : 'Desactivada: el taller operará solo con cuenta de Maestro (se puede activar después)'}
                       </p>
@@ -1145,25 +1217,25 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
 
                   <button
                     type="button"
-                    onClick={() => setIncludeOperatorAccount(prev => !prev)}
+                    onClick={() => setHasOperario(prev => !prev)}
                     className={`text-xs font-black px-3.5 py-1.5 rounded-full border transition cursor-pointer ${
-                      includeOperatorAccount
+                      hasOperario
                         ? 'bg-orange-500 text-slate-950 border-orange-300 shadow'
                         : 'bg-slate-800 text-slate-400 border-slate-700'
                     }`}
                   >
-                    {includeOperatorAccount ? '✓ CUENTA ACTIVADA' : '+ NO CREAR CUENTA OPERARIO'}
+                    {hasOperario ? '✓ CUENTA ACTIVADA' : '+ NO CREAR CUENTA OPERARIO'}
                   </button>
                 </div>
 
-                {includeOperatorAccount ? (
+                {hasOperario ? (
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-3 border-t border-slate-800">
                     <div>
                       <label className="block text-xs font-bold text-slate-300 mb-1">Nombre del Operario</label>
                       <input
                         type="text"
-                        value={newOpName}
-                        onChange={(e) => setNewOpName(e.target.value)}
+                        value={operarioNombre}
+                        onChange={(e) => setOperarioNombre(e.target.value)}
                         placeholder="Chalán Beto"
                         className="w-full bg-slate-950 border border-slate-700 text-white rounded-xl p-3 font-bold focus:border-orange-400 focus:outline-none text-sm"
                       />
@@ -1173,9 +1245,9 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
                       <label className="block text-xs font-bold text-slate-300 mb-1">Correo de Ingreso (Login) *</label>
                       <input
                         type="email"
-                        required={includeOperatorAccount}
-                        value={newOpEmail}
-                        onChange={(e) => setNewOpEmail(e.target.value)}
+                        required={hasOperario}
+                        value={operarioEmail}
+                        onChange={(e) => setOperarioEmail(e.target.value)}
                         placeholder="operario@taller.com"
                         className="w-full bg-slate-950 border border-slate-700 text-white rounded-xl p-3 font-bold focus:border-orange-400 focus:outline-none text-sm"
                       />
@@ -1185,8 +1257,8 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
                       <label className="block text-xs font-bold text-slate-300 mb-1">Contraseña de Acceso</label>
                       <input
                         type="text"
-                        value={newOpPassword}
-                        onChange={(e) => setNewOpPassword(e.target.value)}
+                        value={operarioPassword}
+                        onChange={(e) => setOperarioPassword(e.target.value)}
                         placeholder="chalan2026"
                         className="w-full bg-slate-950 border border-slate-700 text-orange-300 rounded-xl p-3 font-mono font-bold focus:border-orange-400 focus:outline-none text-sm"
                       />
@@ -1205,10 +1277,10 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
               {/* Botón de Guardar */}
               <button
                 type="submit"
-                disabled={isSubmitting}
+                disabled={loading}
                 className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-black text-2xl py-5 rounded-2xl shadow-2xl border-2 border-amber-300 uppercase tracking-wide transition cursor-pointer"
               >
-                {isSubmitting ? 'GUARDANDO EN FIRESTORE...' : 'REGISTRAR Y GUARDAR TALLER EN FIRESTORE'}
+                {loading ? 'Guardando...' : 'Guardar Taller'}
               </button>
 
             </form>
@@ -1245,7 +1317,7 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
                 <div className="flex justify-between items-center">
                   <h4 className="font-black text-amber-300 text-sm uppercase">🪚 Acceso Maestro (Completo)</h4>
                   <button
-                    onClick={() => handleCopyText(`Taller: ${credentialsModalTenant.name}\nUsuario Maestro: ${credentialsModalTenant.masterAccount.email}\nContraseña: ${credentialsModalTenant.masterAccount.password || 'taller2026'}\nAcceso completo: https://carpinteriapro.app`, 'copy_m_block')}
+                    onClick={() => handleCopyText(`Taller: ${credentialsModalTenant.name}\nUsuario Maestro: ${credentialsModalTenant.masterAccount.email}\nContraseña: ${credentialsModalTenant.masterAccount.password || 'taller2026'}\nAcceso completo a todos los módulos.`, 'copy_m_block')}
                     className="text-xs bg-amber-500 text-slate-950 font-black px-3 py-1 rounded-lg flex items-center gap-1 cursor-pointer"
                   >
                     {copiedKey === 'copy_m_block' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
@@ -1263,7 +1335,7 @@ export const SuperAdminPanel: React.FC<SuperAdminPanelProps> = ({
                   <div className="flex justify-between items-center">
                     <h4 className="font-black text-orange-300 text-sm uppercase">🔨 Acceso Operario / Chalán</h4>
                     <button
-                      onClick={() => handleCopyText(`Taller: ${credentialsModalTenant.name}\nUsuario Operario: ${credentialsModalTenant.operatorAccount!.email}\nContraseña: ${credentialsModalTenant.operatorAccount!.password || 'chalan2026'}\nAcceso solo taller: https://carpinteriapro.app`, 'copy_op_block')}
+                      onClick={() => handleCopyText(`Taller: ${credentialsModalTenant.name}\nUsuario Operario: ${credentialsModalTenant.operatorAccount!.email}\nContraseña: ${credentialsModalTenant.operatorAccount!.password || 'chalan2026'}\nAcceso solo taller (Módulos 2 y 3).`, 'copy_op_block')}
                       className="text-xs bg-orange-500 text-white font-black px-3 py-1 rounded-lg flex items-center gap-1 cursor-pointer"
                     >
                       {copiedKey === 'copy_op_block' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
