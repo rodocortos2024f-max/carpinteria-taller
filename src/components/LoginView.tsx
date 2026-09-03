@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { User } from '../types';
 import { DEFAULT_SUPER_ADMINS } from '../utils/tenants';
@@ -127,68 +127,84 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
         throw new Error('No se pudo inicializar la conexión con Firestore. Verifique su conexión.');
       }
 
-      // 1. Consulta la colección 'workshops' buscando si el correo ingresado coincide con 'maestro.email' O con 'operario.email'
+      // 1. Haz un getDocs a la colección 'workshops' para traer los documentos
       const workshopsRef = collection(db, 'workshops');
+      const snapshot = await getDocs(workshopsRef);
+
+      const foundAccountsForDebug: Array<{
+        taller: string;
+        id: string;
+        maestroEmail: string;
+        operarioEmail: string;
+        estado: string;
+      }> = [];
+
       let matchedDoc: any = null;
       let matchedRole: 'MAESTRO' | 'OPERARIO' | null = null;
       let matchedAccountData: any = null;
 
-      // Consulta 1.A: Búsqueda directa por maestro.email
-      const qMaestro = query(workshopsRef, where('maestro.email', '==', cleanEmail));
-      const snapMaestro = await getDocs(qMaestro);
+      // 2. Compara el correo ingresado con maestro.email u operario.email aplicando .trim().toLowerCase() a ambos lados
+      for (const docSnap of snapshot.docs) {
+        const wData = docSnap.data() || {};
+        const maestroObj = wData.maestro || wData.masterAccount || {};
+        const operarioObj = wData.operario || wData.operatorAccount || {};
 
-      if (!snapMaestro.empty) {
-        matchedDoc = snapMaestro.docs[0];
-        matchedRole = 'MAESTRO';
-        const docData = matchedDoc.data();
-        matchedAccountData = docData?.maestro || docData?.masterAccount;
-      } else {
-        // Consulta 1.B: Búsqueda directa por operario.email
-        const qOperario = query(workshopsRef, where('operario.email', '==', cleanEmail));
-        const snapOperario = await getDocs(qOperario);
+        const maestroEmailRaw = (maestroObj.email || '').toString().trim().toLowerCase();
+        const operarioEmailRaw = (operarioObj.email || '').toString().trim().toLowerCase();
 
-        if (!snapOperario.empty) {
-          matchedDoc = snapOperario.docs[0];
+        foundAccountsForDebug.push({
+          id: docSnap.id,
+          taller: wData.nombreTaller || wData.name || 'Taller sin nombre',
+          maestroEmail: maestroEmailRaw || '(vacío)',
+          operarioEmail: operarioEmailRaw || '(vacío)',
+          estado: (wData.estado || wData.status || 'desconocido').toString()
+        });
+
+        if (maestroEmailRaw && maestroEmailRaw === cleanEmail) {
+          matchedDoc = docSnap;
+          matchedRole = 'MAESTRO';
+          matchedAccountData = maestroObj;
+          break;
+        }
+
+        if (operarioEmailRaw && operarioEmailRaw === cleanEmail) {
+          matchedDoc = docSnap;
           matchedRole = 'OPERARIO';
-          const docData = matchedDoc.data();
-          matchedAccountData = docData?.operario || docData?.operatorAccount;
+          matchedAccountData = operarioObj;
+          break;
         }
       }
 
-      // Consulta 1.C: Si no se encontró por coincidencia exacta de campo (por variaciones de mayúsculas/minúsculas o campos anidados),
-      // examinar los documentos de la colección 'workshops'
-      if (!matchedDoc) {
-        const allSnap = await getDocs(workshopsRef);
-        for (const doc of allSnap.docs) {
-          const wData = doc.data();
-          const maestroEmail = (wData?.maestro?.email || wData?.masterAccount?.email || '').trim().toLowerCase();
-          const operarioEmail = (wData?.operario?.email || wData?.operatorAccount?.email || '').trim().toLowerCase();
-
-          if (maestroEmail === cleanEmail) {
-            matchedDoc = doc;
-            matchedRole = 'MAESTRO';
-            matchedAccountData = wData?.maestro || wData?.masterAccount;
-            break;
-          }
-
-          if (operarioEmail === cleanEmail) {
-            matchedDoc = doc;
-            matchedRole = 'OPERARIO';
-            matchedAccountData = wData?.operario || wData?.operatorAccount;
-            break;
-          }
-        }
-      }
-
-      // Si no existe ningún taller con ese correo
+      // 5. Si no hay coincidencia, muestra en consola los correos encontrados para depuración antes del alerta
       if (!matchedDoc || !matchedRole || !matchedAccountData) {
+        console.warn('--- DEPURACIÓN DE INICIO DE SESIÓN ---');
+        console.warn('Correo buscado:', cleanEmail);
+        console.table(foundAccountsForDebug);
+        console.warn('Detalle completo de talleres y correos disponibles:', foundAccountsForDebug);
+
+        alert(`No se encontró ningún taller registrado con el correo: "${cleanEmail}".\n\nRevisa la consola del navegador (F12) para ver los correos registrados.`);
         setErrorMsg('No se encontró ningún taller registrado con este correo electrónico.');
         return;
       }
 
-      const workshopData = matchedDoc.data();
+      const workshopData = matchedDoc.data() || {};
 
-      // 3. Si el campo 'estado' del taller NO es 'activo', muestra alerta: 'El taller se encuentra suspendido o inactivo.'
+      // 3. Si encuentra la coincidencia, verifica la contraseña con .trim()
+      const storedPassword = (matchedAccountData.password || '').toString().trim();
+      const enteredPassword = password.trim();
+
+      const isPasswordValid =
+        storedPassword === enteredPassword ||
+        (matchedRole === 'MAESTRO' && (enteredPassword === 'taller2026' || enteredPassword === 'carpinteria2026')) ||
+        (matchedRole === 'OPERARIO' && (enteredPassword === 'chalan2026' || enteredPassword === 'carpinteria2026'));
+
+      if (!isPasswordValid) {
+        alert('Contraseña incorrecta. Verifique sus credenciales.');
+        setErrorMsg('Contraseña incorrecta. Verifique sus credenciales.');
+        return;
+      }
+
+      // 4. Si el estado es 'activo', guarda la sesión (tenantId, rol) y permite el ingreso
       const rawEstado = (workshopData.estado || workshopData.status || '').toString().trim().toLowerCase();
       if (rawEstado !== 'activo' && rawEstado !== 'activa') {
         alert('El taller se encuentra suspendido o inactivo.');
@@ -196,19 +212,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
         return;
       }
 
-      // 2. Compara la contraseña directamente contra 'maestro.password' u 'operario.password'
-      const expectedPassword = (matchedAccountData.password || '').toString();
-      const isPasswordValid =
-        expectedPassword === cleanPassword ||
-        (matchedRole === 'MAESTRO' && (cleanPassword === 'taller2026' || cleanPassword === 'carpinteria2026')) ||
-        (matchedRole === 'OPERARIO' && (cleanPassword === 'chalan2026' || cleanPassword === 'carpinteria2026'));
-
-      if (!isPasswordValid) {
-        setErrorMsg('Contraseña incorrecta. Verifique sus credenciales.');
-        return;
-      }
-
-      // 4. Si las credenciales coinciden y el estado es activo, concede acceso guardando la sesión con el rol correspondiente ('MAESTRO' u 'OPERARIO') y el ID del documento del taller
       const workshopDocId = matchedDoc.id;
       const workshopName = workshopData.nombreTaller || workshopData.name || 'Taller de Carpintería';
       const userName =
@@ -220,13 +223,13 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
         id: matchedAccountData.id || `usr_${workshopDocId}_${matchedRole.toLowerCase()}`,
         name: userName,
         email: matchedAccountData.email || cleanEmail,
-        role: matchedRole, // 'MAESTRO' u 'OPERARIO'
+        role: matchedRole,
         tenantId: workshopDocId,
         tenantName: workshopName,
         lastLogin: new Date().toISOString()
       };
 
-      // Guardar sesión en localStorage
+      // Guardar la sesión (tenantId, rol) en localStorage
       localStorage.setItem('carpinteria_user', JSON.stringify(sessionUser));
       localStorage.setItem('carpinteria_role', matchedRole);
       localStorage.setItem('carpinteria_tenant_id', workshopDocId);
@@ -235,7 +238,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
       clearOfflineLockoutMessage();
       recordSuccessfulFirebaseValidation('direct_firestore_login');
 
-      // Conceder acceso
+      // Permite el ingreso
       onLogin(sessionUser);
     } catch (err: any) {
       console.error('Error al verificar credenciales con Firestore:', err);
