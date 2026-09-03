@@ -1,69 +1,21 @@
-import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
-import { getAuth, Auth } from 'firebase/auth';
-import { getFirestore, Firestore } from 'firebase/firestore';
-import baseConfig from '../../firebase-applet-config.json';
+import { initializeApp, getApps, getApp } from "firebase/app";
+import { getFirestore } from "firebase/firestore";
+import { getAuth } from "firebase/auth";
 
-export interface FirebaseAppConfig {
-  projectId: string;
-  appId: string;
-  apiKey: string;
-  authDomain: string;
-  firestoreDatabaseId?: string;
-  storageBucket?: string;
-  messagingSenderId?: string;
-  measurementId?: string;
-  oAuthClientId?: string;
-  recaptchaSiteKey?: string;
-}
+const firebaseConfig = {
+  apiKey: "AIzaSyB6LU_c_H4gDQWUodDVJcDEBxiuzapOksw",
+  authDomain: "el-taller-delmaestro-karpinter.firebaseapp.com",
+  projectId: "el-taller-delmaestro-karpinter",
+  storageBucket: "el-taller-delmaestro-karpinter.firebasestorage.app",
+  messagingSenderId: "270714689832",
+  appId: "1:270714689832:web:34d7107a426243feb3d81d"
+};
 
-/**
- * Get active Firebase Config (supports local custom overrides if provided)
- */
-export function getFirebaseConfig(): FirebaseAppConfig {
-  if (typeof window !== 'undefined') {
-    try {
-      const custom = localStorage.getItem('carpinteria_custom_firebase_config');
-      if (custom) {
-        const parsed = JSON.parse(custom);
-        if (parsed && (parsed.projectId || parsed.apiKey)) {
-          return { ...baseConfig, ...parsed };
-        }
-      }
-    } catch (_) {}
-  }
-  return baseConfig as FirebaseAppConfig;
-}
+const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const auth = getAuth(app);
 
-export const firebaseConfig = getFirebaseConfig();
-
-let app: FirebaseApp;
-let auth: Auth;
-let db: Firestore;
-
-try {
-  if (!getApps().length) {
-    app = initializeApp(firebaseConfig);
-  } else {
-    app = getApp();
-  }
-  auth = getAuth(app);
-  
-  // Connect to custom Firestore database if specified, otherwise default
-  const dbId = firebaseConfig.firestoreDatabaseId;
-  if (dbId && dbId !== '(default)') {
-    try {
-      db = getFirestore(app, dbId);
-    } catch (e) {
-      console.warn('Fallback to default Firestore database:', e);
-      db = getFirestore(app);
-    }
-  } else {
-    db = getFirestore(app);
-  }
-} catch (error) {
-  console.error('Firebase initialization error:', error);
-}
-
-export { app, auth, db };
+export { app, db, auth, firebaseConfig };
 export default app;
+
 
