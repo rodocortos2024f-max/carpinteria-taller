@@ -249,7 +249,7 @@ export default function App() {
 
     if (user.role === 'superadmin') {
       setCurrentView('superadmin');
-    } else if (user.role === 'operario' || user.role === 'ayudante') {
+    } else if (user.role === 'operario' || user.role === 'ayudante' || user.role === 'OPERARIO') {
       setCurrentView('optimizer');
     } else {
       setCurrentView('menu');
@@ -381,7 +381,7 @@ export default function App() {
   // Safe navigation between modules: checks RBAC and synchronizes active project
   const handleNavigate = (targetView: ViewMode) => {
     // RBAC: If operario tries to go to budget or project creation, redirect safely
-    const isOperator = currentUser?.role === 'operario' || currentUser?.role === 'ayudante';
+    const isOperator = currentUser?.role === 'operario' || currentUser?.role === 'ayudante' || currentUser?.role === 'OPERARIO';
     if (isOperator && (targetView === 'budget' || targetView === 'admin')) {
       setCurrentView('optimizer');
       return;

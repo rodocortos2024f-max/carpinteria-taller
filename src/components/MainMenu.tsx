@@ -19,7 +19,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   isVoiceAudioEnabled = true,
   onToggleVoiceAudio
 }) => {
-  const isOperator = currentUser.role === 'operario' || currentUser.role === 'ayudante';
+  const isOperator = currentUser.role === 'operario' || currentUser.role === 'ayudante' || currentUser.role === 'OPERARIO';
   const isSuperAdmin = currentUser.role === 'superadmin';
 
   return (

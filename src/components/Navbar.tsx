@@ -25,7 +25,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onToggleFirebaseInfo,
   onSwitchTenant
 }) => {
-  const isOperator = currentUser?.role === 'operario' || currentUser?.role === 'ayudante';
+  const isOperator = currentUser?.role === 'operario' || currentUser?.role === 'ayudante' || currentUser?.role === 'OPERARIO';
   const isSuperAdmin = currentUser?.role === 'superadmin';
   const tenants = isSuperAdmin ? getAllTenants() : [];
 

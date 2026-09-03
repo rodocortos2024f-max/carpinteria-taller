@@ -1,6 +1,6 @@
 export type ViewMode = 'login' | 'menu' | 'project' | 'optimizer' | 'assembly' | 'budget' | 'offcuts' | 'admin' | 'superadmin';
 
-export type UserRole = 'superadmin' | 'maestro' | 'operario' | 'ayudante' | 'administrador';
+export type UserRole = 'superadmin' | 'maestro' | 'operario' | 'ayudante' | 'administrador' | 'MAESTRO' | 'OPERARIO';
 
 export type TenantLicensePlan = 'mensual' | 'anual' | 'vitalicia' | 'demo';
 
