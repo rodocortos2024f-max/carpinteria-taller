@@ -127,9 +127,12 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
         throw new Error('No se pudo inicializar la conexión con Firestore. Verifique su conexión.');
       }
 
+      console.log("Firebase App Config:", db.app.options);
+
       // 1. Haz un getDocs a la colección 'workshops' para traer los documentos
       const workshopsRef = collection(db, 'workshops');
-      const snapshot = await getDocs(workshopsRef);
+      const querySnapshot = await getDocs(workshopsRef);
+      console.log("Documentos encontrados:", querySnapshot.size);
 
       const foundAccountsForDebug: Array<{
         taller: string;
@@ -144,7 +147,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
       let matchedAccountData: any = null;
 
       // 2. Compara el correo ingresado con maestro.email u operario.email aplicando .trim().toLowerCase() a ambos lados
-      for (const docSnap of snapshot.docs) {
+      for (const docSnap of querySnapshot.docs) {
         const wData = docSnap.data() || {};
         const maestroObj = wData.maestro || wData.masterAccount || {};
         const operarioObj = wData.operario || wData.operatorAccount || {};
