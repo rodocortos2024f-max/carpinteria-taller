@@ -376,7 +376,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
             >
               <LogIn className="w-7 h-7 sm:w-8 sm:h-8 text-amber-200 shrink-0 filter drop-shadow" />
               <span className="drop-shadow-md">
-                {isLoading ? 'VERIFICANDO CREDENCIALES...' : 'INICIAR SESIÓN'}
+                {isLoading ? 'VERIFICANDO CREDENCIALES...' : 'INGRESAR AL TALLER'}
               </span>
             </button>
           </form>
