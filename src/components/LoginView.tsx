@@ -129,10 +129,24 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
 
       console.log("Firebase App Config:", db.app.options);
 
-      // 1. Haz un getDocs a la colección 'workshops' para traer los documentos
-      const workshopsRef = collection(db, 'workshops');
+      // 1. Consulta la colección 'workshops' y registra el nombre de la colección consultada
+      const collectionName = 'workshops';
+      console.log(`[Firestore Login] Consultando colección: '${collectionName}' en el proyecto:`, db.app?.options?.projectId);
+
+      const workshopsRef = collection(db, collectionName);
       const querySnapshot = await getDocs(workshopsRef);
-      console.log("Documentos encontrados:", querySnapshot.size);
+      console.log(`[Firestore Login] Colección '${collectionName}' consultada. Documentos encontrados:`, querySnapshot.size);
+
+      // Imprime el error exacto si Firestore regresa un array/conjunto vacío
+      if (querySnapshot.empty || querySnapshot.size === 0) {
+        const emptyError = `[Firestore Login Error] La colección '${collectionName}' regresó un array vacío (0 documentos). Verifique que existan registros en Firestore para el proyecto '${db.app?.options?.projectId}' en la colección '${collectionName}'.`;
+        console.error(emptyError, {
+          collection: collectionName,
+          projectId: db.app?.options?.projectId,
+          authDomain: db.app?.options?.authDomain,
+          totalDocuments: querySnapshot.size
+        });
+      }
 
       const foundAccountsForDebug: Array<{
         taller: string;
@@ -152,7 +166,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
         const maestroObj = wData.maestro || wData.masterAccount || {};
         const operarioObj = wData.operario || wData.operatorAccount || {};
 
-        const maestroEmailRaw = (maestroObj.email || '').toString().trim().toLowerCase();
+        const maestroEmailRaw = (maestroObj.email || wData.email || wData.adminEmail || '').toString().trim().toLowerCase();
         const operarioEmailRaw = (operarioObj.email || '').toString().trim().toLowerCase();
 
         foundAccountsForDebug.push({
@@ -166,7 +180,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
         if (maestroEmailRaw && maestroEmailRaw === cleanEmail) {
           matchedDoc = docSnap;
           matchedRole = 'MAESTRO';
-          matchedAccountData = maestroObj;
+          matchedAccountData = maestroObj.password ? maestroObj : { ...maestroObj, password: wData.password };
           break;
         }
 

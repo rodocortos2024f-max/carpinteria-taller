@@ -1,3 +1,4 @@
+// Build Timestamp / Cache Bust Netlify: 2026-09-03T19:23:21-07:00 (03 de Septiembre 2026)
 import React, { useState, useEffect, useRef } from 'react';
 import { User, ViewMode, Project, OffcutItem, AppActivityLog, WorkshopTenant } from './types';
 import { Navbar } from './components/Navbar';
